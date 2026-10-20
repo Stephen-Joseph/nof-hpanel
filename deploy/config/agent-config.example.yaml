@@ -1,0 +1,19 @@
+# Hosting Panel Agent Configuration Example
+server:
+  listen_address: "10.0.0.1:8443" # Private / WireGuard interface only
+  tls_cert_file: "/etc/panel-agent/certs/server.crt"
+  tls_key_file: "/etc/panel-agent/certs/server.key"
+  client_ca_file: "/etc/panel-agent/certs/panel-ca.crt"
+
+auth:
+  hmac_secret: "change-this-to-a-very-secure-random-token"
+  max_timestamp_skew_seconds: 60
+
+logging:
+  log_file: "/var/log/panel-agent/agent.log"
+  level: "info"
+  format: "json"
+
+system:
+  temp_dir: "/tmp/panel-agent"
+

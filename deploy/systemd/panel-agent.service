@@ -1,0 +1,22 @@
+[Unit]
+Description=Hosting Panel Server Agent
+After=network.target nginx.service mariadb.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/local/bin/panel-agent -config /etc/panel-agent/config.yaml
+Restart=always
+RestartSec=5s
+LimitNOFILE=65535
+
+# Security sandboxing
+ProtectSystem=full
+ProtectHome=no
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+

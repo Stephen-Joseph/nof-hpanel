@@ -1,0 +1,57 @@
+services:
+  mariadb:
+    image: 'mariadb:11'
+    container_name: hpanel-mariadb
+    ports:
+      - '${FORWARD_DB_PORT:-3306}:3306'
+    environment:
+      MYSQL_ROOT_PASSWORD: '${DB_PASSWORD:-secret}'
+      MYSQL_ROOT_HOST: '%'
+      MYSQL_DATABASE: '${DB_DATABASE:-hpanel}'
+      MYSQL_USER: '${DB_USERNAME:-hpanel}'
+      MYSQL_PASSWORD: '${DB_PASSWORD:-secret}'
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'no'
+    volumes:
+      - 'hpanel-mariadb:/var/lib/mysql'
+    networks:
+      - hpanel
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: 'redis:7-alpine'
+    container_name: hpanel-redis
+    ports:
+      - '${FORWARD_REDIS_PORT:-6379}:6379'
+    volumes:
+      - 'hpanel-redis:/data'
+    networks:
+      - hpanel
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mailpit:
+    image: 'axllent/mailpit:latest'
+    container_name: hpanel-mailpit
+    ports:
+      - '${FORWARD_MAILPIT_PORT:-1025}:1025'
+      - '${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}:8025'
+    networks:
+      - hpanel
+
+networks:
+  hpanel:
+    driver: bridge
+
+volumes:
+  hpanel-mariadb:
+    driver: local
+  hpanel-redis:
+    driver: local
+
