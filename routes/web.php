@@ -93,6 +93,18 @@ Route::middleware('auth')->group(function () {
         return view('accounts.show', ['account' => $account]);
     })->middleware('can:view,account')->name('accounts.show');
 
+    Route::get('/accounts/{account}/files', function (Account $account) {
+        return view('files.index', ['account' => $account]);
+    })->middleware('can:view,account')->name('accounts.files');
+
+    Route::get('/accounts/{account}/ftp', function (Account $account) {
+        return view('access.ftp', ['account' => $account]);
+    })->middleware('can:view,account')->name('accounts.ftp');
+
+    Route::get('/accounts/{account}/ssh', function (Account $account) {
+        return view('access.ssh', ['account' => $account]);
+    })->middleware('can:view,account')->name('accounts.ssh');
+
     // Domains
     Route::get('/domains', function () {
         return view('domains.index');
@@ -113,6 +125,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/domains/{domain}/ssl', function (Domain $domain) {
         return view('domains.ssl', ['domain' => $domain]);
     })->middleware('can:view,domain')->name('domains.ssl');
+
+    Route::get('/domains/{domain}/php', function (Domain $domain) {
+        return view('domains.php', ['domain' => $domain]);
+    })->middleware('can:view,domain')->name('domains.php');
 
     // Servers (Admin Only)
     Route::get('/servers', function () {

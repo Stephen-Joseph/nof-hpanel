@@ -84,6 +84,26 @@ func main() {
 	registry.Register(actions.NewSslStatusAction())
 	registry.Register(actions.NewSslCustomAction())
 
+	registry.Register(actions.NewPhpPoolWriteAction())
+	registry.Register(actions.NewPhpPoolRemoveAction())
+	registry.Register(actions.NewPhpListVersionsAction())
+	registry.Register(actions.NewPhpInstallVersionAction())
+	registry.Register(actions.NewPhpFpmStatusAction())
+
+	registry.Register(actions.NewFileListAction())
+	registry.Register(actions.NewFileReadAction())
+	registry.Register(actions.NewFileWriteAction())
+	registry.Register(actions.NewFileCreateAction())
+	registry.Register(actions.NewFileDeleteAction())
+	registry.Register(actions.NewFileRenameAction())
+	registry.Register(actions.NewFileChmodAction())
+	registry.Register(actions.NewFileArchiveAction())
+	registry.Register(actions.NewFileExtractAction())
+
+	registry.Register(actions.NewSshKeyAddAction())
+	registry.Register(actions.NewSshKeyRemoveAction())
+	registry.Register(actions.NewSftpAccountCreateAction())
+
 	// Initialize HTTP/mTLS server
 	srv := server.NewServer(cfg, validator, registry, logWriter)
 

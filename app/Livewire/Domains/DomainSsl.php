@@ -131,4 +131,3 @@ class DomainSsl extends Component
         return view('livewire.domains.domain-ssl');
     }
 }
-

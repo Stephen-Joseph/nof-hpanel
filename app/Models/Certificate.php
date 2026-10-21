@@ -105,4 +105,3 @@ class Certificate extends Model
         return (int) now()->diffInDays($this->valid_to, false);
     }
 }
-

@@ -56,4 +56,3 @@ class RenewExpiringCertificates extends Command
         return Command::SUCCESS;
     }
 }
-

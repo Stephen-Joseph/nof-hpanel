@@ -95,6 +95,9 @@
                             <a href="{{ route('domains.ssl', $d) }}" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 transition">
                                 SSL
                             </a>
+                            <a href="{{ route('domains.php', $d) }}" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 transition">
+                                PHP
+                            </a>
                             <a href="{{ route('domains.dns', $d) }}" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 transition">
                                 DNS
                             </a>

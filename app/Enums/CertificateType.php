@@ -17,4 +17,3 @@ enum CertificateType: string
         };
     }
 }
-

@@ -108,6 +108,26 @@ class Account extends Model
     }
 
     /**
+     * Secondary FTP / SFTP sub-accounts.
+     *
+     * @return HasMany<FtpAccount, $this>
+     */
+    public function ftpAccounts(): HasMany
+    {
+        return $this->hasMany(FtpAccount::class);
+    }
+
+    /**
+     * Authorized SSH keys for this account.
+     *
+     * @return HasMany<SshKey, $this>
+     */
+    public function sshKeys(): HasMany
+    {
+        return $this->hasMany(SshKey::class);
+    }
+
+    /**
      * Filter accounts visible to the given user based on tenancy.
      *
      * @param  Builder<Account>  $query

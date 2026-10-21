@@ -59,6 +59,19 @@
         </div>
     </div>
 
+    <!-- Access & Tools Quick Bar -->
+    <div class="mb-6 flex flex-wrap gap-2">
+        <a href="{{ route('accounts.files', $account) }}" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 transition shadow-sm">
+            📁 File Manager
+        </a>
+        <a href="{{ route('accounts.ftp', $account) }}" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 transition shadow-sm">
+            🔌 FTP / SFTP Accounts
+        </a>
+        <a href="{{ route('accounts.ssh', $account) }}" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 transition shadow-sm">
+            🔑 SSH Keys
+        </a>
+    </div>
+
     @if (session()->has('status'))
         <div class="mb-6 rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-4 text-sm text-emerald-400">
             {{ session('status') }}

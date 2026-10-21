@@ -1,0 +1,48 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('ftp_accounts', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('account_id')->constrained('accounts')->cascadeOnDelete();
+            $table->string('username')->unique();
+            $table->string('homedir');
+            $table->string('password_hash');
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+
+            $table->index(['account_id', 'is_active']);
+        });
+
+        Schema::create('ssh_keys', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('account_id')->constrained('accounts')->cascadeOnDelete();
+            $table->string('name');
+            $table->string('key_type', 32);
+            $table->text('public_key');
+            $table->string('fingerprint')->index();
+            $table->timestamps();
+
+            $table->index(['account_id']);
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('ssh_keys');
+        Schema::dropIfExists('ftp_accounts');
+    }
+};
+

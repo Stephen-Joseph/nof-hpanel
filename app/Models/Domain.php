@@ -23,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property string $document_root
  * @property AppProfile $app_profile
  * @property string $php_version
+ * @property array<string, mixed>|null $php_ini
  * @property bool $force_https
  * @property WwwRedirect $www_redirect
  * @property bool $is_active
@@ -39,6 +40,7 @@ use Illuminate\Support\Carbon;
     'document_root',
     'app_profile',
     'php_version',
+    'php_ini',
     'force_https',
     'www_redirect',
     'is_active',
@@ -59,6 +61,7 @@ class Domain extends Model
             'type' => DomainType::class,
             'app_profile' => AppProfile::class,
             'www_redirect' => WwwRedirect::class,
+            'php_ini' => 'array',
             'force_https' => 'boolean',
             'is_active' => 'boolean',
         ];
@@ -94,5 +97,21 @@ class Domain extends Model
     public function hasActiveCertificate(): bool
     {
         return $this->certificate !== null && $this->certificate->isActive();
+    }
+
+    /**
+     * Get customized or default PHP INI directives.
+     *
+     * @return array<string, mixed>
+     */
+    public function getPhpIni(): array
+    {
+        return array_merge([
+            'memory_limit' => '256M',
+            'upload_max_filesize' => '32M',
+            'post_max_size' => '32M',
+            'max_execution_time' => 60,
+            'display_errors' => 'off',
+        ], $this->php_ini ?? []);
     }
 }

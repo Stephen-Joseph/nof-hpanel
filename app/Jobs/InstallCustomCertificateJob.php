@@ -146,4 +146,3 @@ class InstallCustomCertificateJob implements ShouldQueue
         }
     }
 }
-

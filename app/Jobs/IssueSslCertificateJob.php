@@ -140,4 +140,3 @@ class IssueSslCertificateJob implements ShouldQueue
         }
     }
 }
-

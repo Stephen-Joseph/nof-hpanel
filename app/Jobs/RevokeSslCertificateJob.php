@@ -74,4 +74,3 @@ class RevokeSslCertificateJob implements ShouldQueue
         }
     }
 }
-
