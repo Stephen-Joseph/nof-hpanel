@@ -26,9 +26,39 @@
                             Dashboard
                         </a>
 
+                        <a href="{{ route('domains.index') }}" class="px-3 py-2 rounded-md text-sm font-medium {{ request()->routeIs('domains*') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white' }}">
+                            Domains
+                        </a>
+
+                        <a href="{{ route('accounts.index') }}" class="px-3 py-2 rounded-md text-sm font-medium {{ request()->routeIs('accounts*') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white' }}">
+                            Accounts
+                        </a>
+
+                        <a href="{{ route('packages.index') }}" class="px-3 py-2 rounded-md text-sm font-medium {{ request()->routeIs('packages*') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white' }}">
+                            Packages
+                        </a>
+
+                        @can('viewAny', App\Models\Server::class)
+                            <a href="{{ route('servers.index') }}" class="px-3 py-2 rounded-md text-sm font-medium {{ request()->routeIs('servers*') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white' }}">
+                                Servers
+                            </a>
+                        @endcan
+
                         @can('viewAny', App\Models\AuditLog::class)
                             <a href="{{ route('admin.audit-logs') }}" class="px-3 py-2 rounded-md text-sm font-medium {{ request()->routeIs('admin.audit-logs*') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white' }}">
                                 Audit Logs
+                            </a>
+                        @endcan
+
+                        @can('viewAny', App\Models\AgentJob::class)
+                            <a href="{{ route('admin.jobs.index') }}" class="px-3 py-2 rounded-md text-sm font-medium {{ request()->routeIs('admin.jobs*') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white' }}">
+                                Agent Jobs
+                            </a>
+                        @endcan
+
+                        @can('viewAny', App\Models\Server::class)
+                            <a href="{{ route('admin.api-tokens.index') }}" class="px-3 py-2 rounded-md text-sm font-medium {{ request()->routeIs('admin.api-tokens*') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white' }}">
+                                API &amp; Webhooks
                             </a>
                         @endcan
                     </div>

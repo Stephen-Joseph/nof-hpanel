@@ -3,7 +3,12 @@
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\PasswordResetController;
+use App\Models\Account;
+use App\Models\AgentJob;
 use App\Models\AuditLog;
+use App\Models\Domain;
+use App\Models\Package;
+use App\Models\Server;
 use Illuminate\Support\Facades\Route;
 
 // Guest Authentication Routes
@@ -51,4 +56,74 @@ Route::middleware('auth')->group(function () {
     Route::get('/admin/audit-logs', function () {
         return view('admin.audit-logs.index');
     })->middleware('can:viewAny,'.AuditLog::class)->name('admin.audit-logs');
+
+    // Admin Agent Jobs
+    Route::get('/admin/jobs', function () {
+        return view('admin.jobs.index');
+    })->middleware('can:viewAny,'.AgentJob::class)->name('admin.jobs.index');
+
+    // Admin API Tokens & Webhooks
+    Route::get('/admin/api-tokens', function () {
+        return view('admin.api-tokens.index');
+    })->middleware('can:viewAny,'.Server::class)->name('admin.api-tokens.index');
+
+    // Packages
+    Route::get('/packages', function () {
+        return view('packages.index');
+    })->middleware('can:viewAny,'.Package::class)->name('packages.index');
+
+    Route::get('/packages/create', function () {
+        return view('packages.create');
+    })->middleware('can:create,'.Package::class)->name('packages.create');
+
+    Route::get('/packages/{package}/edit', function (Package $package) {
+        return view('packages.edit', ['package' => $package]);
+    })->middleware('can:update,package')->name('packages.edit');
+
+    // Accounts
+    Route::get('/accounts', function () {
+        return view('accounts.index');
+    })->middleware('can:viewAny,'.Account::class)->name('accounts.index');
+
+    Route::get('/accounts/create', function () {
+        return view('accounts.create');
+    })->middleware('can:create,'.Account::class)->name('accounts.create');
+
+    Route::get('/accounts/{account}', function (Account $account) {
+        return view('accounts.show', ['account' => $account]);
+    })->middleware('can:view,account')->name('accounts.show');
+
+    // Domains
+    Route::get('/domains', function () {
+        return view('domains.index');
+    })->middleware('can:viewAny,'.Domain::class)->name('domains.index');
+
+    Route::get('/domains/create', function () {
+        return view('domains.create');
+    })->middleware('can:create,'.Domain::class)->name('domains.create');
+
+    Route::get('/domains/{domain}/redirects', function (Domain $domain) {
+        return view('domains.redirects', ['domain' => $domain]);
+    })->middleware('can:update,domain')->name('domains.redirects');
+
+    Route::get('/domains/{domain}/dns', function (Domain $domain) {
+        return view('domains.dns', ['domain' => $domain]);
+    })->middleware('can:view,domain')->name('domains.dns');
+
+    Route::get('/domains/{domain}/ssl', function (Domain $domain) {
+        return view('domains.ssl', ['domain' => $domain]);
+    })->middleware('can:view,domain')->name('domains.ssl');
+
+    // Servers (Admin Only)
+    Route::get('/servers', function () {
+        return view('servers.index');
+    })->middleware('can:viewAny,'.Server::class)->name('servers.index');
+
+    Route::get('/servers/create', function () {
+        return view('servers.create');
+    })->middleware('can:create,'.Server::class)->name('servers.create');
+
+    Route::get('/servers/{server}/edit', function (Server $server) {
+        return view('servers.edit', ['server' => $server]);
+    })->middleware('can:update,server')->name('servers.edit');
 });

@@ -8,6 +8,7 @@ server:
 auth:
   hmac_secret: "change-this-to-a-very-secure-random-token"
   max_timestamp_skew_seconds: 60
+  nonce_ring_file: "/var/lib/panel-agent/nonces.dat"
 
 logging:
   log_file: "/var/log/panel-agent/agent.log"

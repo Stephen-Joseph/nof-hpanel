@@ -8,6 +8,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -30,6 +31,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read User|null $parent
+ * @property-read Collection<int, Account> $accounts
+ * @property-read Collection<int, Package> $resellerPackages
  */
 #[Fillable([
     'name',
@@ -99,6 +102,26 @@ class User extends Authenticatable implements MustVerifyEmail
     public function auditLogs(): HasMany
     {
         return $this->hasMany(AuditLog::class);
+    }
+
+    /**
+     * Hosting accounts belonging to this user.
+     *
+     * @return HasMany<Account, $this>
+     */
+    public function accounts(): HasMany
+    {
+        return $this->hasMany(Account::class);
+    }
+
+    /**
+     * Packages created by this user as a reseller.
+     *
+     * @return HasMany<Package, $this>
+     */
+    public function resellerPackages(): HasMany
+    {
+        return $this->hasMany(Package::class, 'reseller_owner_id');
     }
 
     public function isAdmin(): bool

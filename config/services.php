@@ -35,4 +35,13 @@ return [
         ],
     ],
 
+    'agent' => [
+        'secret' => env('PANEL_AGENT_HMAC_SECRET', 'test-agent-secret-key-change-me'),
+        'timeout' => env('PANEL_AGENT_TIMEOUT', 30),
+        'connect_timeout' => env('PANEL_AGENT_CONNECT_TIMEOUT', 5),
+        'tls_ca_file' => env('PANEL_AGENT_TLS_CA_FILE'),
+        'client_cert_file' => env('PANEL_AGENT_CLIENT_CERT_FILE'),
+        'client_key_file' => env('PANEL_AGENT_CLIENT_KEY_FILE'),
+    ],
+
 ];

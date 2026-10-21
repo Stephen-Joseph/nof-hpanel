@@ -1,9 +1,21 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"io"
+	"log"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+	"time"
+
+	"github.com/hpanel/agent/internal/actions"
+	"github.com/hpanel/agent/internal/config"
+	"github.com/hpanel/agent/internal/security"
+	"github.com/hpanel/agent/internal/server"
 )
 
 // Version is the current version of the hpanel agent.
@@ -19,6 +31,80 @@ func main() {
 		os.Exit(0)
 	}
 
-	fmt.Printf("Starting hpanel-agent version %s with config: %s\n", Version, *configPath)
-}
+	log.Printf("Starting hpanel-agent %s using config: %s", Version, *configPath)
 
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		log.Printf("Warning: Could not read config file (%v), proceeding with defaults and env variables", err)
+		cfg = config.DefaultConfig()
+	}
+
+	// Setup logging destination (file or stdout)
+	var logWriter io.Writer = os.Stdout
+	if cfg.Logging.LogFile != "" {
+		_ = os.MkdirAll(filepath.Dir(cfg.Logging.LogFile), 0750)
+		f, err := os.OpenFile(cfg.Logging.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
+		if err == nil {
+			defer f.Close()
+			logWriter = io.MultiWriter(os.Stdout, f)
+		} else {
+			log.Printf("Warning: Failed to open log file %s: %v. Logging to stdout only.", cfg.Logging.LogFile, err)
+		}
+	}
+
+	// Initialize sliding window nonce tracker
+	windowDuration := time.Duration(cfg.Auth.MaxTimestampSkewSeconds) * time.Second
+	nonceTracker, err := security.NewNonceTracker(cfg.Auth.NonceRingFile, windowDuration)
+	if err != nil {
+		log.Fatalf("Fatal: failed to initialize nonce tracker: %v", err)
+	}
+
+	// Initialize request security validator
+	validator := security.NewRequestValidator([]byte(cfg.Auth.HMACSecret), nonceTracker, cfg.Auth.MaxTimestampSkewSeconds)
+
+	// Initialize typed action registry
+	registry := actions.NewRegistry()
+	registry.Register(actions.NewSystemPingAction(Version))
+	registry.Register(actions.NewSystemHealthAction())
+
+	accountCreate := actions.NewAccountCreateAction()
+	registry.Register(accountCreate)
+	registry.Register(actions.NewAccountSuspendAction())
+	registry.Register(actions.NewAccountUnsuspendAction())
+	registry.Register(actions.NewAccountUpgradeAction(accountCreate))
+	registry.Register(actions.NewAccountTerminateAction())
+
+	registry.Register(actions.NewVhostWriteAction())
+	registry.Register(actions.NewVhostRemoveAction())
+	registry.Register(actions.NewVhostReloadAction())
+
+	registry.Register(actions.NewSslIssueAction())
+	registry.Register(actions.NewSslRenewAction())
+	registry.Register(actions.NewSslRevokeAction())
+	registry.Register(actions.NewSslStatusAction())
+	registry.Register(actions.NewSslCustomAction())
+
+	// Initialize HTTP/mTLS server
+	srv := server.NewServer(cfg, validator, registry, logWriter)
+
+	// Trap termination signals for graceful shutdown
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		log.Printf("Agent listening on %s (TLS configured: %v)", cfg.Server.ListenAddress, cfg.Server.TLSCertFile != "")
+		if err := srv.Start(); err != nil && err.Error() != "http: Server closed" {
+			log.Fatalf("Fatal server error: %v", err)
+		}
+	}()
+
+	<-stop
+	log.Println("Shutting down agent gracefully...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_ = srv.Close()
+	_ = ctx
+	log.Println("Agent stopped.")
+}

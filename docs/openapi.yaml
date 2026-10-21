@@ -1,0 +1,318 @@
+openapi: 3.1.0
+info:
+  title: Hosting Panel Billing & Provisioning API
+  version: 1.0.0
+  description: |
+    RESTful API for WHMCS, Blesta, and custom billing integration with the Hosting Panel.
+    Supports asynchronous account provisioning, lifecycle mutations, quota tracking, and HMAC-signed webhooks.
+servers:
+  - url: https://panel.example.com/api/v1
+    description: Production Panel API
+
+paths:
+  /health:
+    get:
+      summary: Panel and Node Health Status
+      description: Returns database status and checks responsiveness of all registered agent nodes.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Health check report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  panel:
+                    type: object
+                  servers:
+                    type: array
+
+  /packages:
+    get:
+      summary: List Available Hosting Packages
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Array of packages with quotas and limits
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  packages:
+                    type: array
+
+  /accounts:
+    post:
+      summary: Create Hosting Account
+      description: Enqueues an asynchronous account provisioning job.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+          required: false
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - domain
+                - package_id
+                - customer_email
+              properties:
+                username:
+                  type: string
+                  pattern: '^[a-z][a-z0-9]{2,15}$'
+                  example: john99
+                domain:
+                  type: string
+                  example: example.com
+                package_id:
+                  type: integer
+                  example: 1
+                customer_email:
+                  type: string
+                  format: email
+                  example: customer@example.com
+                customer_name:
+                  type: string
+                  example: John Doe
+                server_id:
+                  type: integer
+                  example: 1
+      responses:
+        '202':
+          description: Account creation enqueued
+        '409':
+          description: Idempotency conflict
+        '422':
+          description: Validation failure
+
+  /accounts/{id}:
+    get:
+      summary: Get Hosting Account Details
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Account information with limits and assigned server
+        '403':
+          description: Tenancy violation
+        '404':
+          description: Account not found
+
+    delete:
+      summary: Terminate Hosting Account
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+      security:
+        - BearerAuth: []
+      responses:
+        '202':
+          description: Termination enqueued
+
+  /accounts/{id}/suspend:
+    post:
+      summary: Suspend Hosting Account
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  example: Payment overdue
+      responses:
+        '200':
+          description: Suspension enqueued
+
+  /accounts/{id}/unsuspend:
+    post:
+      summary: Unsuspend Hosting Account
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Unsuspension enqueued
+
+  /accounts/{id}/upgrade:
+    post:
+      summary: Upgrade Account Package
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - package_id
+              properties:
+                package_id:
+                  type: integer
+                  example: 2
+      responses:
+        '200':
+          description: Upgrade enqueued
+
+  /accounts/{id}/usage:
+    get:
+      summary: Get Account Quota Usage vs Limits
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Storage, inode, bandwidth, database usage metrics
+
+  /accounts/{id}/password:
+    post:
+      summary: Change Account Password
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - password
+              properties:
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Password updated
+
+  /accounts/{id}/sso:
+    post:
+      summary: Generate Single-Sign-On Temporary Login URL
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Temporary signed login URL with 15-minute expiration
+
+  /domains:
+    post:
+      summary: Add Domain to Account
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - account_id
+                - domain
+              properties:
+                account_id:
+                  type: integer
+                domain:
+                  type: string
+                  example: app.example.com
+                document_root:
+                  type: string
+      responses:
+        '201':
+          description: Domain added
+
+  /ssl/issue:
+    post:
+      summary: Request SSL Certificate
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - domain
+              properties:
+                domain:
+                  type: string
+                  example: example.com
+                account_id:
+                  type: integer
+      responses:
+        '202':
+          description: SSL issuance requested
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: hp_token
+
