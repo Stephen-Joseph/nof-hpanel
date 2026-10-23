@@ -104,6 +104,40 @@ func main() {
 	registry.Register(actions.NewSshKeyRemoveAction())
 	registry.Register(actions.NewSftpAccountCreateAction())
 
+	registry.Register(actions.NewDbCreateAction())
+	registry.Register(actions.NewDbDropAction())
+	registry.Register(actions.NewDbUserCreateAction())
+	registry.Register(actions.NewDbUserSetPasswordAction())
+	registry.Register(actions.NewDbUserGrantAction())
+	registry.Register(actions.NewDbUserRevokeAction())
+	registry.Register(actions.NewDbUserDropAction())
+	registry.Register(actions.NewDbDumpAction())
+	registry.Register(actions.NewDbImportAction())
+	registry.Register(actions.NewDbListUsageAction())
+
+	registry.Register(actions.NewCronWriteAction())
+	registry.Register(actions.NewCronListAction())
+	registry.Register(actions.NewLogTailAction())
+	registry.Register(actions.NewLogListAction())
+	registry.Register(actions.NewLogRotateAction())
+
+	registry.Register(actions.NewBackupCreateAction())
+	registry.Register(actions.NewBackupListAction())
+	registry.Register(actions.NewBackupRestoreAction())
+	registry.Register(actions.NewBackupDeleteAction())
+	registry.Register(actions.NewBackupVerifyAction())
+
+	registry.Register(actions.NewGitDeployAction())
+	registry.Register(actions.NewGitRollbackAction())
+
+	registry.Register(actions.NewWordpressInstallAction())
+	registry.Register(actions.NewWordpressUninstallAction())
+
+	registry.Register(actions.NewHtpasswdWriteAction())
+	registry.Register(actions.NewHtpasswdDeleteAction())
+
+	registry.Register(actions.NewUsageCollectAction())
+
 	// Initialize HTTP/mTLS server
 	srv := server.NewServer(cfg, validator, registry, logWriter)
 

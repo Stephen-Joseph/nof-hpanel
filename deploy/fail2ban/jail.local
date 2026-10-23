@@ -1,0 +1,33 @@
+# Fail2ban configuration for HPanel Hosting Node
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+banaction = ufw
+ignoreip = 127.0.0.1/8 ::1
+
+[sshd]
+enabled = true
+port    = ssh
+logpath = %(sshd_log)s
+backend = %(default_backend)s
+maxretry = 4
+bantime = 24h
+
+[nginx-http-auth]
+enabled = true
+port    = http,https
+logpath = /var/log/nginx/error.log
+
+[nginx-botsearch]
+enabled = true
+port     = http,https
+logpath  = /var/log/nginx/access.log
+maxretry = 2
+
+[nginx-limit-req]
+enabled = true
+port    = http,https
+logpath = /var/log/nginx/error.log
+maxretry = 10
+

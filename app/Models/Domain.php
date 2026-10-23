@@ -32,6 +32,9 @@ use Illuminate\Support\Carbon;
  * @property-read Account $account
  * @property-read Collection<int, Redirect> $redirects
  * @property-read Certificate|null $certificate
+ * @property-read Collection<int, ProtectedDirectory> $protectedDirectories
+ * @property-read Collection<int, GitDeployment> $gitDeployments
+ * @property-read Collection<int, WordPressInstall> $wordPressInstalls
  */
 #[Fillable([
     'account_id',
@@ -97,6 +100,30 @@ class Domain extends Model
     public function hasActiveCertificate(): bool
     {
         return $this->certificate !== null && $this->certificate->isActive();
+    }
+
+    /**
+     * @return HasMany<ProtectedDirectory, $this>
+     */
+    public function protectedDirectories(): HasMany
+    {
+        return $this->hasMany(ProtectedDirectory::class);
+    }
+
+    /**
+     * @return HasMany<GitDeployment, $this>
+     */
+    public function gitDeployments(): HasMany
+    {
+        return $this->hasMany(GitDeployment::class);
+    }
+
+    /**
+     * @return HasMany<WordPressInstall, $this>
+     */
+    public function wordPressInstalls(): HasMany
+    {
+        return $this->hasMany(WordPressInstall::class);
     }
 
     /**

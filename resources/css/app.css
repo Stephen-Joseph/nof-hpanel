@@ -1,9 +1,148 @@
 @import 'tailwindcss';
+@import '@fontsource/plus-jakarta-sans/400.css';
+@import '@fontsource/plus-jakarta-sans/500.css';
+@import '@fontsource/plus-jakarta-sans/600.css';
+@import '@fontsource/plus-jakarta-sans/700.css';
+@import '@fontsource/plus-jakarta-sans/800.css';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
+@source '../views/**/*.blade.php';
+@source '../../app/**/*.php';
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    --color-bg-app: var(--bg-app);
+    --color-bg-shell: var(--bg-shell);
+    --color-card: var(--bg-card);
+    --color-border: var(--border);
+    --color-text: var(--text);
+    --color-muted: var(--text-muted);
+
+    --color-primary-100: var(--primary-100);
+    --color-primary-300: var(--primary-300);
+    --color-primary-500: var(--primary-500);
+    --color-primary-600: var(--primary-600);
+    --color-primary-700: var(--primary-700);
+
+    --color-status-success-bg: var(--status-success-bg);
+    --color-status-success-text: var(--status-success-text);
+    --color-status-info-bg: var(--status-info-bg);
+    --color-status-info-text: var(--status-info-text);
+    --color-status-warning-bg: var(--status-warning-bg);
+    --color-status-warning-text: var(--status-warning-text);
+    --color-status-danger-bg: var(--status-danger-bg);
+    --color-status-danger-text: var(--status-danger-text);
+
+    --radius-card: 20px;
+}
+
+:root {
+    --bg-app: #F3F4F6;
+    --bg-shell: #F7F8FA;
+    --bg-card: #FFFFFF;
+    --border: #E5E7EB;
+    --text: #0F172A;
+    --text-muted: #6B7280;
+
+    --primary-100: #DBEAFE;
+    --primary-300: #93C5FD;
+    --primary-500: #2563EB;
+    --primary-600: #1D4ED8;
+    --primary-700: #1E40AF;
+    --gradient-primary: linear-gradient(135deg, #2563EB 0%, #1E3A8A 100%);
+    --gradient-card-dark: linear-gradient(145deg, #0c1626 0%, #060b13 100%);
+
+    --status-success-bg: #DCFCE7;
+    --status-success-text: #15803D;
+    --status-info-bg: #DBEAFE;
+    --status-info-text: #1D4ED8;
+    --status-warning-bg: #FEF3C7;
+    --status-warning-text: #B45309;
+    --status-danger-bg: #FEE2E2;
+    --status-danger-text: #B91C1C;
+
+    --hatch-pattern: repeating-linear-gradient(45deg, #E5E7EB 0, #E5E7EB 2px, transparent 0, transparent 7px);
+
+    /* Legacy compatibility aliases */
+    --bg-page: var(--bg-app);
+    --bg-surface: var(--bg-card);
+    --border-subtle: var(--border);
+    --text-primary: var(--text);
+    --text-secondary: var(--text-muted);
+}
+
+.dark {
+    --bg-app: #080C14;
+    --bg-shell: #0D131F;
+    --bg-card: #131B2B;
+    --border: #1F2A3D;
+    --text: #F1F5F9;
+    --text-muted: #94A3B8;
+
+    --primary-100: #1e3a8a;
+    --primary-300: #3b82f6;
+    --primary-500: #2563EB;
+    --primary-600: #1D4ED8;
+    --primary-700: #1E40AF;
+    --gradient-primary: linear-gradient(135deg, #2563EB 0%, #172554 100%);
+    --gradient-card-dark: linear-gradient(145deg, #091222 0%, #040810 100%);
+
+    --status-success-bg: rgba(34, 197, 94, 0.16);
+    --status-success-text: #4ADE80;
+    --status-info-bg: rgba(59, 130, 246, 0.16);
+    --status-info-text: #60A5FA;
+    --status-warning-bg: rgba(245, 158, 11, 0.16);
+    --status-warning-text: #FBBF24;
+    --status-danger-bg: rgba(239, 68, 68, 0.16);
+    --status-danger-text: #F87171;
+
+    --hatch-pattern: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.10) 0, rgba(255, 255, 255, 0.10) 2px, transparent 0, transparent 7px);
+
+    /* Legacy compatibility aliases */
+    --bg-page: var(--bg-app);
+    --bg-surface: var(--bg-card);
+    --border-subtle: var(--border);
+    --text-primary: var(--text);
+    --text-secondary: var(--text-muted);
+}
+
+/* Base custom utility classes */
+.bg-gradient-primary {
+    background: var(--gradient-primary);
+}
+
+.bg-card-dark-gradient {
+    background: var(--gradient-card-dark);
+}
+
+.bg-hatch {
+    background: var(--hatch-pattern);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.3);
+    border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+    background: rgba(51, 65, 85, 0.5);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.5);
 }

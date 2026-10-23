@@ -23,7 +23,7 @@ class WriteVhostJob implements ShouldQueue
 
     public function handle(AgentClient $client): void
     {
-        $this->domain->loadMissing(['account.server', 'account.package', 'redirects', 'certificate']);
+        $this->domain->loadMissing(['account.server', 'account.package', 'redirects', 'certificate', 'protectedDirectories']);
         $account = $this->domain->account;
         $server = $account->server;
 
@@ -34,6 +34,16 @@ class WriteVhostJob implements ShouldQueue
                 'source' => $r->source_path,
                 'target' => $r->target_url,
                 'code' => $r->status_code,
+            ])
+            ->toArray();
+
+        $protectedDirs = $this->domain->protectedDirectories()
+            ->where('is_active', true)
+            ->get()
+            ->map(fn ($p) => [
+                'path' => $p->path,
+                'realm' => $p->realm,
+                'htpasswd_path' => "/home/{$account->linux_username}/.htpasswds/{$p->htpasswd_filename}",
             ])
             ->toArray();
 
@@ -58,6 +68,7 @@ class WriteVhostJob implements ShouldQueue
             'hsts_enabled' => (bool) ($this->domain->certificate->hsts_enabled ?? false),
             'www_redirect' => $this->domain->www_redirect->value,
             'redirects' => $redirects,
+            'protected_dirs' => $protectedDirs,
             'max_websites' => $account->package->max_websites,
             'current_website_count' => $account->domains()->count(),
         ];

@@ -25,8 +25,9 @@ type VhostWritePayload struct {
 	SSLKeyPath          string         `json:"ssl_key_path,omitempty"`
 	HstsEnabled         bool           `json:"hsts_enabled,omitempty"`
 	WwwRedirect         string         `json:"www_redirect,omitempty"`
-	Redirects           []RedirectRule `json:"redirects,omitempty"`
-	MaxWebsites         int            `json:"max_websites,omitempty"`
+	Redirects           []RedirectRule           `json:"redirects,omitempty"`
+	ProtectedDirs       []ProtectedDirectoryRule `json:"protected_dirs,omitempty"`
+	MaxWebsites         int                      `json:"max_websites,omitempty"`
 	CurrentWebsiteCount int            `json:"current_website_count,omitempty"`
 }
 
@@ -108,8 +109,9 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 		SSLCertPath:  p.SSLCertPath,
 		SSLKeyPath:   p.SSLKeyPath,
 		HstsEnabled:  p.HstsEnabled,
-		WwwRedirect:  p.WwwRedirect,
-		Redirects:    p.Redirects,
+		WwwRedirect:   p.WwwRedirect,
+		Redirects:     p.Redirects,
+		ProtectedDirs: p.ProtectedDirs,
 	}
 
 	configContent, err := RenderVhostConfig(vhostData)

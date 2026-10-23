@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -23,9 +24,12 @@ use Illuminate\Support\Carbon;
  * @property int|null $cpu_cores
  * @property int|null $memory_mb
  * @property int|null $storage_mb
+ * @property int|null $server_group_id
+ * @property string $location
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Collection<int, Account> $accounts
+ * @property-read ServerGroup|null $serverGroup
  */
 #[Fillable([
     'name',
@@ -38,6 +42,8 @@ use Illuminate\Support\Carbon;
     'cpu_cores',
     'memory_mb',
     'storage_mb',
+    'server_group_id',
+    'location',
 ])]
 class Server extends Model
 {
@@ -68,6 +74,16 @@ class Server extends Model
     public function accounts(): HasMany
     {
         return $this->hasMany(Account::class);
+    }
+
+    /**
+     * Server group / cluster this server belongs to.
+     *
+     * @return BelongsTo<ServerGroup, $this>
+     */
+    public function serverGroup(): BelongsTo
+    {
+        return $this->belongsTo(ServerGroup::class);
     }
 
     /**

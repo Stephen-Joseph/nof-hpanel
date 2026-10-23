@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -10,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -71,11 +74,35 @@ func (l *Logger) Log(entry map[string]any) {
 	}
 }
 
+type MetricsTracker struct {
+	mu           sync.RWMutex
+	startTime    time.Time
+	requestCount map[string]int64
+	totalTimeMs  map[string]int64
+}
+
+func NewMetricsTracker() *MetricsTracker {
+	return &MetricsTracker{
+		startTime:    time.Now(),
+		requestCount: make(map[string]int64),
+		totalTimeMs:  make(map[string]int64),
+	}
+}
+
+func (m *MetricsTracker) Record(action, status string, durationMs int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := action + ":" + status
+	m.requestCount[key]++
+	m.totalTimeMs[action] += durationMs
+}
+
 type Server struct {
 	cfg       *config.Config
 	validator *security.RequestValidator
 	registry  *actions.Registry
 	logger    *Logger
+	metrics   *MetricsTracker
 	httpSrv   *http.Server
 }
 
@@ -89,6 +116,7 @@ func NewServer(cfg *config.Config, validator *security.RequestValidator, registr
 		validator: validator,
 		registry:  registry,
 		logger:    NewLogger(logWriter),
+		metrics:   NewMetricsTracker(),
 	}
 
 	return s
@@ -99,6 +127,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/action", s.handleAction)
 	mux.HandleFunc("/api/v1/action", s.handleAction)
 	mux.HandleFunc("/healthz", s.handleHealthz)
+	mux.HandleFunc("/metrics", s.handleMetrics)
 	return mux
 }
 
@@ -106,6 +135,46 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+
+	uptimeSeconds := time.Since(s.metrics.startTime).Seconds()
+
+	var buf bytes.Buffer
+	buf.WriteString("# HELP hpanel_agent_uptime_seconds Total agent uptime in seconds\n")
+	buf.WriteString("# TYPE hpanel_agent_uptime_seconds gauge\n")
+	buf.WriteString(fmt.Sprintf("hpanel_agent_uptime_seconds %.2f\n\n", uptimeSeconds))
+
+	buf.WriteString("# HELP hpanel_agent_goroutines Number of running goroutines\n")
+	buf.WriteString("# TYPE hpanel_agent_goroutines gauge\n")
+	buf.WriteString(fmt.Sprintf("hpanel_agent_goroutines %d\n\n", runtime.NumGoroutine()))
+
+	buf.WriteString("# HELP hpanel_agent_mem_alloc_bytes Number of heap bytes allocated\n")
+	buf.WriteString("# TYPE hpanel_agent_mem_alloc_bytes gauge\n")
+	buf.WriteString(fmt.Sprintf("hpanel_agent_mem_alloc_bytes %d\n\n", mem.Alloc))
+
+	buf.WriteString("# HELP hpanel_agent_requests_total Total number of executed agent actions\n")
+	buf.WriteString("# TYPE hpanel_agent_requests_total counter\n")
+
+	s.metrics.mu.RLock()
+	for k, count := range s.metrics.requestCount {
+		parts := strings.SplitN(k, ":", 2)
+		action := parts[0]
+		status := "unknown"
+		if len(parts) > 1 {
+			status = parts[1]
+		}
+		buf.WriteString(fmt.Sprintf("hpanel_agent_requests_total{action=\"%s\",status=\"%s\"} %d\n", action, status, count))
+	}
+	s.metrics.mu.RUnlock()
+
+	_, _ = w.Write(buf.Bytes())
 }
 
 func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
@@ -202,6 +271,12 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		"dry_run":     req.DryRun,
 		"duration_ms": durationMs,
 	})
+
+	metricStatus := "success"
+	if !res.Success {
+		metricStatus = "error"
+	}
+	s.metrics.Record(req.Action, metricStatus, durationMs)
 
 	if execErr != nil && !res.Success {
 		w.WriteHeader(http.StatusUnprocessableEntity)

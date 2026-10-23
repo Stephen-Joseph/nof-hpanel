@@ -13,22 +13,30 @@ type RedirectRule struct {
 	Code   int    `json:"code"`
 }
 
+type ProtectedDirectoryRule struct {
+	Path         string `json:"path"`
+	Realm        string `json:"realm"`
+	HtpasswdPath string `json:"htpasswd_path"`
+}
+
 type VhostTemplateData struct {
-	Username         string
-	Domain           string
-	ServerNames      string
-	DocumentRoot     string
-	AppProfile       string
-	PHPVersion       string
-	ForceHTTPS       bool
-	SSLEnabled       bool
-	SSLCertPath      string
-	SSLKeyPath       string
-	HstsEnabled      bool
-	WwwRedirect      string // "none", "force_www", "strip_www"
-	Redirects        []RedirectRule
-	WwwRedirectBlock string
-	RedirectsBlock   string
+	Username           string
+	Domain             string
+	ServerNames        string
+	DocumentRoot       string
+	AppProfile         string
+	PHPVersion         string
+	ForceHTTPS         bool
+	SSLEnabled         bool
+	SSLCertPath        string
+	SSLKeyPath         string
+	HstsEnabled        bool
+	WwwRedirect        string // "none", "force_www", "strip_www"
+	Redirects          []RedirectRule
+	ProtectedDirs      []ProtectedDirectoryRule
+	WwwRedirectBlock   string
+	RedirectsBlock     string
+	ProtectedDirsBlock string
 }
 
 const nginxVhostTemplate = `# HPanel Virtual Host Configuration
@@ -122,6 +130,11 @@ server {
 {{if .RedirectsBlock}}
     # Custom URL Redirects
 {{.RedirectsBlock}}
+{{end}}
+
+{{if .ProtectedDirsBlock}}
+    # Password-Protected Directories
+{{.ProtectedDirsBlock}}
 {{end}}
 
 {{if eq .AppProfile "laravel"}}
@@ -265,6 +278,43 @@ func regexpEscape(s string) string {
 	return strings.ReplaceAll(s, ".", "\\.")
 }
 
+func buildProtectedDirsBlock(dirs []ProtectedDirectoryRule, username, phpVersion string) string {
+	if len(dirs) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for _, d := range dirs {
+		p := strings.TrimSpace(d.Path)
+		if !strings.HasPrefix(p, "/") || strings.ContainsAny(p, ";{}\n\r") {
+			continue
+		}
+		realm := strings.TrimSpace(d.Realm)
+		if realm == "" {
+			realm = "Restricted Area"
+		}
+		realm = strings.ReplaceAll(realm, "\"", "\\\"")
+		htPath := strings.TrimSpace(d.HtpasswdPath)
+		if htPath == "" || strings.ContainsAny(htPath, ";{}\n\r") {
+			continue
+		}
+
+		sb.WriteString(fmt.Sprintf(`    location %s {
+        auth_basic "%s";
+        auth_basic_user_file %s;
+        try_files $uri $uri/ /index.php?$query_string;
+
+        location ~ \.php$ {
+            include fastcgi_params;
+            fastcgi_pass unix:/run/php/php%s-fpm-%s.sock;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            fastcgi_index index.php;
+        }
+    }
+`, p, realm, htPath, phpVersion, username))
+	}
+	return sb.String()
+}
+
 // RenderVhostConfig renders the full Nginx server block configuration.
 func RenderVhostConfig(data VhostTemplateData) (string, error) {
 	if data.PHPVersion == "" {
@@ -276,6 +326,7 @@ func RenderVhostConfig(data VhostTemplateData) (string, error) {
 
 	data.WwwRedirectBlock = buildWwwRedirectBlock(data.Domain, data.WwwRedirect)
 	data.RedirectsBlock = buildRedirectsBlock(data.Redirects)
+	data.ProtectedDirsBlock = buildProtectedDirsBlock(data.ProtectedDirs, data.Username, data.PHPVersion)
 
 	tmpl, err := template.New("vhost").Parse(nginxVhostTemplate)
 	if err != nil {

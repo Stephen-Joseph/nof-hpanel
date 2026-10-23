@@ -188,4 +188,3 @@ test('customer can add and delete SSH public key', function () {
 
     $this->assertDatabaseMissing('ssh_keys', ['id' => $sshKey->id]);
 });
-

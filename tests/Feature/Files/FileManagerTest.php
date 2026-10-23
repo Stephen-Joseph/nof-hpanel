@@ -205,4 +205,3 @@ test('renaming, deleting, and changing permissions', function () {
         ->call('deleteItem', '/home/alicecorp/temp.txt')
         ->assertSee('Item deleted.');
 });
-

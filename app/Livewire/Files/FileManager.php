@@ -325,4 +325,3 @@ class FileManager extends Component
         return view('livewire.files.file-manager');
     }
 }
-

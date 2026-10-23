@@ -309,31 +309,35 @@ class AccountController extends Controller
         }
 
         // Return usage vs limits
+        $bandwidthUsedGb = round($account->current_bandwidth_bytes / (1024 * 1024 * 1024), 2);
+
         return response()->json([
             'account_id' => $account->id,
             'username' => $account->linux_username,
+            'is_throttled' => $account->is_throttled,
+            'warning_level' => $account->usage_warning_level,
             'usage' => [
                 'storage_mb' => [
-                    'used' => 124, // Mock current used value
+                    'used' => $account->current_storage_mb,
                     'limit' => $account->package->storage_mb,
-                    'percentage' => round((124 / max(1, $account->package->storage_mb)) * 100, 1),
+                    'percentage' => $account->storagePercentage(),
                 ],
                 'inodes' => [
-                    'used' => 3120,
+                    'used' => $account->current_inodes,
                     'limit' => $account->package->inodes,
-                    'percentage' => round((3120 / max(1, $account->package->inodes)) * 100, 1),
+                    'percentage' => $account->inodesPercentage(),
                 ],
                 'bandwidth_gb' => [
-                    'used' => 4.2,
+                    'used' => $bandwidthUsedGb,
                     'limit' => $account->package->bandwidth_gb,
-                    'percentage' => round((4.2 / max(1, $account->package->bandwidth_gb)) * 100, 1),
+                    'percentage' => $account->bandwidthPercentage(),
                 ],
                 'websites' => [
-                    'used' => 1,
+                    'used' => $account->domains()->count(),
                     'limit' => $account->package->max_websites,
                 ],
                 'databases' => [
-                    'used' => 0,
+                    'used' => $account->databases()->count(),
                     'limit' => $account->package->max_databases,
                 ],
             ],

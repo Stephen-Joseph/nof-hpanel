@@ -3,6 +3,8 @@
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\PasswordResetController;
+use App\Http\Controllers\DatabaseSsoController;
+use App\Http\Controllers\LogDownloadController;
 use App\Models\Account;
 use App\Models\AgentJob;
 use App\Models\AuditLog;
@@ -52,20 +54,42 @@ Route::middleware('auth')->group(function () {
         return view('profile.security');
     })->name('profile.security');
 
-    // Admin Audit Logs
-    Route::get('/admin/audit-logs', function () {
-        return view('admin.audit-logs.index');
-    })->middleware('can:viewAny,'.AuditLog::class)->name('admin.audit-logs');
+    // Admin Routes with optional IP Allowlist protection
+    Route::middleware('admin.ip')->group(function () {
+        Route::get('/admin/audit-logs', function () {
+            return view('admin.audit-logs.index');
+        })->middleware('can:viewAny,'.AuditLog::class)->name('admin.audit-logs');
 
-    // Admin Agent Jobs
-    Route::get('/admin/jobs', function () {
-        return view('admin.jobs.index');
-    })->middleware('can:viewAny,'.AgentJob::class)->name('admin.jobs.index');
+        Route::get('/admin/jobs', function () {
+            return view('admin.jobs.index');
+        })->middleware('can:viewAny,'.AgentJob::class)->name('admin.jobs.index');
 
-    // Admin API Tokens & Webhooks
-    Route::get('/admin/api-tokens', function () {
-        return view('admin.api-tokens.index');
-    })->middleware('can:viewAny,'.Server::class)->name('admin.api-tokens.index');
+        Route::get('/admin/api-tokens', function () {
+            return view('admin.api-tokens.index');
+        })->middleware('can:viewAny,'.Server::class)->name('admin.api-tokens.index');
+
+        Route::get('/admin/usage', function () {
+            return view('admin.usage.index');
+        })->middleware('can:viewAny,'.Server::class)->name('admin.usage.index');
+
+        // Servers (Admin Only)
+        Route::get('/servers', function () {
+            return view('servers.index');
+        })->middleware('can:viewAny,'.Server::class)->name('servers.index');
+
+        Route::get('/servers/create', function () {
+            return view('servers.create');
+        })->middleware('can:create,'.Server::class)->name('servers.create');
+
+        Route::get('/servers/{server}/edit', function (Server $server) {
+            return view('servers.edit', ['server' => $server]);
+        })->middleware('can:update,server')->name('servers.edit');
+    });
+
+    // Reseller Control Center
+    Route::get('/reseller', function () {
+        return view('reseller.index');
+    })->name('reseller.index');
 
     // Packages
     Route::get('/packages', function () {
@@ -105,6 +129,48 @@ Route::middleware('auth')->group(function () {
         return view('access.ssh', ['account' => $account]);
     })->middleware('can:view,account')->name('accounts.ssh');
 
+    Route::get('/accounts/{account}/databases', function (Account $account) {
+        return view('databases.index', ['account' => $account]);
+    })->middleware('can:view,account')->name('accounts.databases');
+
+    Route::get('/accounts/{account}/databases/{databaseUser}/sso', [DatabaseSsoController::class, 'launch'])
+        ->middleware('can:view,account')->name('accounts.databases.sso');
+
+    Route::get('/pma-sso/{token}', [DatabaseSsoController::class, 'consume'])
+        ->name('pma.sso');
+
+    Route::get('/accounts/{account}/cron', function (Account $account) {
+        return view('cron.index', ['account' => $account]);
+    })->middleware('can:view,account')->name('accounts.cron');
+
+    Route::get('/accounts/{account}/logs', function (Account $account) {
+        return view('logs.index', ['account' => $account]);
+    })->middleware('can:view,account')->name('accounts.logs');
+
+    Route::get('/accounts/{account}/logs/{logFile}/download', [LogDownloadController::class, 'download'])
+        ->where('logFile', '.*')
+        ->middleware('can:view,account')->name('accounts.logs.download');
+
+    Route::get('/accounts/{account}/backups', function (Account $account) {
+        return view('backups.index', ['account' => $account]);
+    })->middleware('can:view,account')->name('accounts.backups');
+
+    Route::get('/accounts/{account}/git', function (Account $account) {
+        return view('git.index', ['account' => $account]);
+    })->middleware('can:view,account')->name('accounts.git');
+
+    Route::get('/accounts/{account}/wordpress', function (Account $account) {
+        return view('wordpress.index', ['account' => $account]);
+    })->middleware('can:view,account')->name('accounts.wordpress');
+
+    Route::get('/accounts/{account}/protected-dirs', function (Account $account) {
+        return view('domains.protected-dirs', ['account' => $account]);
+    })->middleware('can:view,account')->name('accounts.protected-dirs');
+
+    Route::get('/accounts/{account}/usage', function (Account $account) {
+        return view('accounts.usage', ['account' => $account]);
+    })->middleware('can:view,account')->name('accounts.usage');
+
     // Domains
     Route::get('/domains', function () {
         return view('domains.index');
@@ -129,17 +195,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/domains/{domain}/php', function (Domain $domain) {
         return view('domains.php', ['domain' => $domain]);
     })->middleware('can:view,domain')->name('domains.php');
-
-    // Servers (Admin Only)
-    Route::get('/servers', function () {
-        return view('servers.index');
-    })->middleware('can:viewAny,'.Server::class)->name('servers.index');
-
-    Route::get('/servers/create', function () {
-        return view('servers.create');
-    })->middleware('can:create,'.Server::class)->name('servers.create');
-
-    Route::get('/servers/{server}/edit', function (Server $server) {
-        return view('servers.edit', ['server' => $server]);
-    })->middleware('can:update,server')->name('servers.edit');
 });
+
+// UI Kit Demo Route (local & testing environments only)
+if (app()->environment('local', 'testing')) {
+    Route::get('/ui-kit', function () {
+        return view('ui-kit');
+    })->name('ui-kit');
+}

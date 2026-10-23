@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -33,6 +34,7 @@ use Illuminate\Support\Carbon;
  * @property-read User|null $parent
  * @property-read Collection<int, Account> $accounts
  * @property-read Collection<int, Package> $resellerPackages
+ * @property-read ResellerProfile|null $resellerProfile
  */
 #[Fillable([
     'name',
@@ -122,6 +124,16 @@ class User extends Authenticatable implements MustVerifyEmail
     public function resellerPackages(): HasMany
     {
         return $this->hasMany(Package::class, 'reseller_owner_id');
+    }
+
+    /**
+     * Reseller resource pool and white-label branding profile.
+     *
+     * @return HasOne<ResellerProfile, $this>
+     */
+    public function resellerProfile(): HasOne
+    {
+        return $this->hasOne(ResellerProfile::class);
     }
 
     public function isAdmin(): bool

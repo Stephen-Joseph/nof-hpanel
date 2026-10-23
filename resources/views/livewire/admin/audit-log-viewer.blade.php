@@ -1,144 +1,136 @@
 <div>
-    <div class="sm:flex sm:items-center sm:justify-between mb-6">
-        <div>
-            <h2 class="text-2xl font-bold text-white tracking-tight">Audit Logs</h2>
-            <p class="text-sm text-slate-400 mt-1">Immutable trail of administrative and account state transitions.</p>
-        </div>
-    </div>
+    <x-layout.page-header 
+        title="Audit Logs" 
+        subtitle="Immutable trail of administrative and account state transitions."
+    />
 
     <!-- Filters -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6 grid grid-cols-1 sm:grid-cols-4 gap-4">
+    <x-ui.card class="mb-6 grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div>
-            <label class="block text-xs font-medium text-slate-400 mb-1">Search Keyword / IP / User</label>
-            <input type="text" wire:model.live.debounce.300ms="search" placeholder="Filter logs..."
-                class="w-full rounded-lg bg-slate-800 border-slate-700 text-white placeholder-slate-500 text-sm px-3 py-2 border">
+            <label class="block text-xs font-medium text-muted mb-1.5">Search Keyword / IP / User</label>
+            <x-ui.input type="text" wire:model.live.debounce.300ms="search" placeholder="Filter logs..." />
         </div>
 
         <div>
-            <label class="block text-xs font-medium text-slate-400 mb-1">Action Type</label>
-            <input type="text" wire:model.live.debounce.300ms="action" placeholder="e.g. auth., user."
-                class="w-full rounded-lg bg-slate-800 border-slate-700 text-white placeholder-slate-500 text-sm px-3 py-2 border">
+            <label class="block text-xs font-medium text-muted mb-1.5">Action Type</label>
+            <x-ui.input type="text" wire:model.live.debounce.300ms="action" placeholder="e.g. auth., user." />
         </div>
 
         <div>
-            <label class="block text-xs font-medium text-slate-400 mb-1">Date From</label>
-            <input type="date" wire:model.live="dateFrom"
-                class="w-full rounded-lg bg-slate-800 border-slate-700 text-white text-sm px-3 py-2 border">
+            <label class="block text-xs font-medium text-muted mb-1.5">Date From</label>
+            <x-ui.input type="date" wire:model.live="dateFrom" />
         </div>
 
         <div>
-            <label class="block text-xs font-medium text-slate-400 mb-1">Date To</label>
-            <input type="date" wire:model.live="dateTo"
-                class="w-full rounded-lg bg-slate-800 border-slate-700 text-white text-sm px-3 py-2 border">
+            <label class="block text-xs font-medium text-muted mb-1.5">Date To</label>
+            <x-ui.input type="date" wire:model.live="dateTo" />
         </div>
-    </div>
+    </x-ui.card>
 
     <!-- Table -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
-        <table class="min-w-full divide-y divide-slate-800 text-left text-sm">
-            <thead class="bg-slate-800/50 text-slate-400 text-xs uppercase tracking-wider font-semibold">
-                <tr>
-                    <th scope="col" class="px-6 py-3">Timestamp</th>
-                    <th scope="col" class="px-6 py-3">Actor</th>
-                    <th scope="col" class="px-6 py-3">Action</th>
-                    <th scope="col" class="px-6 py-3">Target</th>
-                    <th scope="col" class="px-6 py-3">IP Address</th>
-                    <th scope="col" class="px-6 py-3 text-right">Payload</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-800 text-slate-300">
-                @forelse ($logs as $log)
-                    <tr class="hover:bg-slate-800/30 transition">
-                        <td class="px-6 py-4 whitespace-nowrap text-xs text-slate-400 font-mono">
-                            {{ $log->created_at->format('Y-m-d H:i:s') }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            @if ($log->user)
-                                <span class="font-medium text-white">{{ $log->user->name }}</span>
-                                <span class="block text-xs text-slate-500">{{ $log->user->email }}</span>
-                            @else
-                                <span class="text-xs text-slate-500 italic">System / Unauthenticated</span>
-                            @endif
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-medium bg-slate-800 text-indigo-400 border border-slate-700">
-                                {{ $log->action }}
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-400">
-                            {{ $log->target_type ? class_basename($log->target_type) . '#' . $log->target_id : '-' }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-400">
-                            {{ $log->ip_address ?? '-' }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-right text-xs">
-                            @if ($log->old_values || $log->new_values)
-                                <button type="button" wire:click="viewDetails({{ $log->id }})"
-                                    class="text-indigo-400 hover:text-indigo-300 font-medium underline">
-                                    View Diff
-                                </button>
-                            @else
-                                <span class="text-slate-600">-</span>
-                            @endif
-                        </td>
+    <x-ui.card class="p-0 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="border-b border-border bg-shell/50 text-muted font-medium">
+                        <th class="py-3 px-6">Timestamp</th>
+                        <th class="py-3 px-6">Actor</th>
+                        <th class="py-3 px-6">Action</th>
+                        <th class="py-3 px-6">Target</th>
+                        <th class="py-3 px-6">IP Address</th>
+                        <th class="py-3 px-6 text-right">Payload</th>
                     </tr>
-                @empty
-                    <tr>
-                        <td colspan="6" class="px-6 py-8 text-center text-slate-500 text-sm">
-                            No audit log entries matching your criteria.
-                        </td>
-                    </tr>
-                @endforelse
-            </tbody>
-        </table>
+                </thead>
+                <tbody class="divide-y divide-border text-main">
+                    @forelse ($logs as $log)
+                        <tr class="hover:bg-shell/40 transition">
+                            <td class="px-6 py-4 whitespace-nowrap text-xs text-muted font-mono">
+                                {{ $log->created_at->format('Y-m-d H:i:s') }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                @if ($log->user)
+                                    <span class="font-medium text-main">{{ $log->user->name }}</span>
+                                    <span class="block text-xs text-muted">{{ $log->user->email }}</span>
+                                @else
+                                    <span class="text-xs text-muted italic">System / Unauthenticated</span>
+                                @endif
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-medium bg-shell text-primary-500 border border-border">
+                                    {{ $log->action }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-muted">
+                                {{ $log->target_type ? class_basename($log->target_type) . '#' . $log->target_id : '-' }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-muted">
+                                {{ $log->ip_address ?? '-' }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-xs">
+                                @if ($log->old_values || $log->new_values)
+                                    <button type="button" wire:click="viewDetails({{ $log->id }})"
+                                        class="text-primary-500 hover:text-primary-600 font-medium underline cursor-pointer">
+                                        View Diff
+                                    </button>
+                                @else
+                                    <span class="text-muted">-</span>
+                                @endif
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="6" class="px-6 py-8 text-center text-muted text-xs">
+                                No audit log entries matching your criteria.
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
 
         @if ($logs->hasPages())
-            <div class="px-6 py-4 border-t border-slate-800">
+            <div class="px-6 py-4 border-t border-border">
                 {{ $logs->links() }}
             </div>
         @endif
-    </div>
+    </x-ui.card>
 
     <!-- Details Modal -->
     @if ($selectedLog)
-        <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl overflow-hidden">
-                <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div class="bg-card border border-border rounded-[24px] max-w-2xl w-full p-6 shadow-2xl overflow-hidden">
+                <div class="flex items-center justify-between pb-4 border-b border-border">
                     <div>
-                        <h3 class="text-lg font-bold text-white">Audit Log Details #{{ $selectedLog->id }}</h3>
-                        <p class="text-xs text-slate-400 font-mono mt-0.5">{{ $selectedLog->action }} &middot; {{ $selectedLog->created_at->format('Y-m-d H:i:s') }}</p>
+                        <h3 class="text-lg font-bold text-main">Audit Log Details #{{ $selectedLog->id }}</h3>
+                        <p class="text-xs text-muted font-mono mt-0.5">{{ $selectedLog->action }} &middot; {{ $selectedLog->created_at->format('Y-m-d H:i:s') }}</p>
                     </div>
-                    <button type="button" wire:click="closeDetails" class="text-slate-400 hover:text-white">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
+                    <button type="button" wire:click="closeDetails" class="text-muted hover:text-main text-lg cursor-pointer">
+                        &times;
                     </button>
                 </div>
 
                 <div class="mt-4 space-y-4 max-h-96 overflow-y-auto">
                     @if ($selectedLog->old_values)
                         <div>
-                            <h4 class="text-xs font-semibold text-rose-400 uppercase tracking-wider mb-1">Previous Values</h4>
-                            <pre class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs font-mono text-slate-300 overflow-x-auto">{{ json_encode($selectedLog->old_values, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                            <h4 class="text-xs font-semibold text-rose-500 uppercase tracking-wider mb-1">Previous Values</h4>
+                            <pre class="bg-shell p-3 rounded-[16px] border border-border text-xs font-mono text-main overflow-x-auto">{{ json_encode($selectedLog->old_values, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
                         </div>
                     @endif
 
                     @if ($selectedLog->new_values)
                         <div>
-                            <h4 class="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-1">New Values</h4>
-                            <pre class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs font-mono text-slate-300 overflow-x-auto">{{ json_encode($selectedLog->new_values, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                            <h4 class="text-xs font-semibold text-emerald-500 uppercase tracking-wider mb-1">New Values</h4>
+                            <pre class="bg-shell p-3 rounded-[16px] border border-border text-xs font-mono text-main overflow-x-auto">{{ json_encode($selectedLog->new_values, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
                         </div>
                     @endif
                 </div>
 
-                <div class="mt-6 pt-4 border-t border-slate-800 text-right">
-                    <button type="button" wire:click="closeDetails"
-                        class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium rounded-lg border border-slate-700">
+                <div class="mt-6 pt-4 border-t border-border text-right">
+                    <x-ui.button type="button" wire:click="closeDetails" variant="outline" size="sm">
                         Close
-                    </button>
+                    </x-ui.button>
                 </div>
             </div>
         </div>
     @endif
 </div>
-
