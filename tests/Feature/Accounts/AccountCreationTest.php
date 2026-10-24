@@ -236,7 +236,8 @@ test('customer select forwards name and wire:model attributes and validates corr
         ->and($html)->toContain('id="user_id"')
         ->and($html)->toContain('wire:model.live="user_id"')
         ->and($html)->toContain('value="' . $this->customer->id . '"')
-        ->and($html)->toContain('value="" disabled selected>Select customer...</option>');
+        ->and($html)->toContain('value="" disabled>Select customer...</option>')
+        ->and($html)->not->toContain('selected');
 
     // Submitting without user_id must assert validation error for user_id
     $component->call('save')
