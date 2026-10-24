@@ -114,6 +114,53 @@ class AgentJob extends Model
         return $this->hasMany(AgentJobLog::class, 'agent_job_id')->orderBy('id', 'asc');
     }
 
+    /**
+     * @return HasMany<ProvisioningStep, $this>
+     */
+    public function provisioningSteps(): HasMany
+    {
+        return $this->hasMany(ProvisioningStep::class, 'job_id', 'id')->orderBy('id', 'asc');
+    }
+
+    public function createStep(string $key, string $label): ProvisioningStep
+    {
+        return $this->provisioningSteps()->create([
+            'key' => $key,
+            'label' => $label,
+            'status' => 'pending',
+        ]);
+    }
+
+    public function getStep(string $key): ?ProvisioningStep
+    {
+        return $this->provisioningSteps()->where('key', $key)->first();
+    }
+
+    public function overallProgressPercent(): int
+    {
+        $total = $this->provisioningSteps()->count();
+        if ($total === 0) {
+            return $this->status === AgentJobStatus::COMPLETED ? 100 : 0;
+        }
+
+        $done = $this->provisioningSteps()->where('status', 'done')->count();
+        return (int) round(($done / $total) * 100);
+    }
+
+    public function estimatedRemainingSeconds(): ?int
+    {
+        $steps = $this->provisioningSteps;
+        $doneSteps = $steps->where('status', 'done')->filter(fn ($s) => $s->durationSeconds() !== null);
+        $pendingCount = $steps->whereIn('status', ['pending', 'running'])->count();
+
+        if ($doneSteps->isEmpty() || $pendingCount === 0) {
+            return null;
+        }
+
+        $avgSec = $doneSteps->avg(fn ($s) => $s->durationSeconds());
+        return (int) max(1, round($avgSec * $pendingCount));
+    }
+
     public function recordLog(string $message, string $level = 'info'): AgentJobLog
     {
         return $this->logs()->create([

@@ -43,3 +43,20 @@ function fallbackCopyText(text, message) {
     }
     textArea.remove();
 }
+
+// Mini-games while waiting (Pure JS / Alpine)
+import { memoryGame } from './games/memory';
+import { snakeGame } from './games/snake';
+import { typingGame } from './games/typing';
+import { reactionGame } from './games/reaction';
+import { gameHost } from './games/game-host';
+
+document.addEventListener('alpine:init', () => {
+    if (window.Alpine) {
+        window.Alpine.data('gameHost', gameHost);
+        window.Alpine.data('memoryGame', memoryGame);
+        window.Alpine.data('snakeGame', snakeGame);
+        window.Alpine.data('typingGame', typingGame);
+        window.Alpine.data('reactionGame', reactionGame);
+    }
+});

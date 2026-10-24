@@ -125,7 +125,7 @@ class JobViewer extends Component
 
         $selectedJob = null;
         if ($this->selectedJobId !== null) {
-            $selectedJob = AgentJob::with(['server', 'account', 'dispatcher', 'logs'])
+            $selectedJob = AgentJob::with(['server', 'account', 'dispatcher', 'logs', 'provisioningSteps'])
                 ->find($this->selectedJobId);
         }
 

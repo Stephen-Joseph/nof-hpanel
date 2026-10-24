@@ -20,7 +20,13 @@
 
         <!-- Mobile brand logo -->
         <a href="{{ route('dashboard') }}" wire:navigate class="lg:hidden flex items-center shrink-0">
-            <img src="{{ asset('H-Paneltm(1).png') }}" alt="{{ config('app.name', 'HPanel') }}" class="h-7 w-auto max-w-[120px] object-contain" />
+            <img 
+                src="{{ asset('H-Paneltm(1).png') }}" 
+                onerror="this.onerror=null;this.src='{{ asset('logo.png') }}';"
+                alt="{{ config('app.name', 'HPanel') }}" 
+                style="max-height: 32px; width: auto; max-width: 130px;"
+                class="h-7 sm:h-8 w-auto max-w-[130px] object-contain" 
+            />
         </a>
 
         <!-- Global Search Palette Trigger -->

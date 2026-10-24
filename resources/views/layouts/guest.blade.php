@@ -37,8 +37,10 @@
             <a href="/" class="inline-flex items-center justify-center group mb-2">
                 <img 
                     src="{{ asset('H-Paneltm(1).png') }}" 
+                    onerror="this.onerror=null;this.src='{{ asset('logo.png') }}';"
                     alt="{{ config('app.name', 'HPanel') }}" 
-                    class="h-14 sm:h-16 w-auto max-w-[260px] object-contain mx-auto group-hover:opacity-95 transition-opacity duration-150" 
+                    style="max-height: 60px; width: auto; max-width: 260px;"
+                    class="h-14 sm:h-16 w-auto max-w-[260px] object-contain mx-auto group-hover:opacity-95 transition-opacity duration-150 filter drop-shadow-2xs dark:drop-shadow-[0_2px_12px_rgba(56,189,248,0.25)]" 
                 />
             </a>
             <p class="text-xs text-[var(--text-muted)]">cPanel-Style Cloud Hosting Management</p>

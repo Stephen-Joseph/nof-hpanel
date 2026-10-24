@@ -12,8 +12,10 @@
             <a href="{{ route('dashboard') }}" wire:navigate class="flex items-center group py-1">
                 <img 
                     src="{{ asset('H-Paneltm(1).png') }}" 
+                    onerror="this.onerror=null;this.src='{{ asset('logo.png') }}';"
                     alt="{{ config('app.name', 'HPanel') }}" 
-                    class="h-10 w-auto max-w-[200px] object-contain group-hover:opacity-95 transition-all duration-150" 
+                    style="max-height: 40px; width: auto; max-width: 190px;"
+                    class="h-10 w-auto max-w-[190px] object-contain group-hover:opacity-95 transition-all duration-150 filter drop-shadow-2xs dark:drop-shadow-[0_2px_8px_rgba(56,189,248,0.2)]" 
                 />
             </a>
         </div>

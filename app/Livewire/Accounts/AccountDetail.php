@@ -3,6 +3,7 @@
 namespace App\Livewire\Accounts;
 
 use App\Enums\AccountStatus;
+use App\Enums\AgentJobStatus;
 use App\Jobs\ProvisionAccount;
 use App\Jobs\SuspendAccount;
 use App\Jobs\TerminateAccount;
@@ -128,11 +129,15 @@ class AccountDetail extends Component
             ->get();
 
         $recentAgentJobs = $this->account->agentJobs()->with('logs')->take(5)->get();
+        $latestJob = $this->account->agentJobs()->with(['logs', 'provisioningSteps'])->first();
+        $isProvisioning = $this->account->isPending() || ($latestJob && $latestJob->status === AgentJobStatus::RUNNING);
         $availablePackages = Package::availableFor($user)->get();
 
         return view('livewire.accounts.account-detail', [
             'recentLogs' => $recentLogs,
             'recentAgentJobs' => $recentAgentJobs,
+            'latestJob' => $latestJob,
+            'isProvisioning' => $isProvisioning,
             'availablePackages' => $availablePackages,
             'canManage' => $user->can('update', $this->account),
             'canDelete' => $user->can('delete', $this->account),

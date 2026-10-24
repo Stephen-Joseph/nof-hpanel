@@ -1,4 +1,4 @@
-<div>
+<div @if($isProvisioning) wire:poll.2s @endif>
     <x-layout.page-header 
         title="{{ $account->primary_domain }}" 
         subtitle="Linux User: {{ $account->linux_username }} &middot; Home: /home/{{ $account->linux_username }}"
@@ -51,6 +51,22 @@
             </div>
         </x-slot:actions>
     </x-layout.page-header>
+
+    @if ($latestJob && $latestJob->provisioningSteps->isNotEmpty())
+        <div class="mb-6">
+            <x-ui.progress-steps 
+                :steps="$latestJob->provisioningSteps"
+                :percent="$latestJob->overallProgressPercent()"
+                :estimated-remaining="$latestJob->estimatedRemainingSeconds()"
+                retry-action="retryProvisioning"
+                title="Account Provisioning Pipeline"
+            />
+
+            @if ($isProvisioning)
+                <x-ui.while-you-wait :job-id="$latestJob->id" :is-running="$isProvisioning" />
+            @endif
+        </div>
+    @endif
 
     <!-- Access & Tools Quick Bar -->
     <div class="mb-6 flex flex-wrap gap-2">

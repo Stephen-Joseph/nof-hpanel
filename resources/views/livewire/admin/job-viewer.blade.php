@@ -147,7 +147,7 @@
 
     <!-- Job Details / Logs Modal -->
     @if ($selectedJob)
-        <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4" @if($selectedJob->status->value === 'running') wire:poll.2s @endif>
             <div class="bg-card border border-border rounded-[24px] max-w-4xl w-full p-6 shadow-2xl relative max-h-[90vh] flex flex-col">
                 <!-- Modal Header -->
                 <div class="flex items-start justify-between border-b border-border pb-4 mb-4">
@@ -174,6 +174,19 @@
 
                 <!-- Modal Body -->
                 <div class="overflow-y-auto space-y-4 flex-1 pr-2">
+                    @if ($selectedJob->provisioningSteps->isNotEmpty())
+                        <x-ui.progress-steps 
+                            :steps="$selectedJob->provisioningSteps"
+                            :percent="$selectedJob->overallProgressPercent()"
+                            :estimated-remaining="$selectedJob->estimatedRemainingSeconds()"
+                            title="Action Execution Pipeline"
+                        />
+
+                        @if ($selectedJob->status->value === 'running')
+                            <x-ui.while-you-wait :job-id="$selectedJob->id" :is-running="true" />
+                        @endif
+                    @endif
+
                     <!-- Error Alert -->
                     @if ($selectedJob->error_message)
                         <div class="rounded-[16px] bg-rose-500/10 border border-rose-500/20 p-3.5 text-xs text-rose-500 font-mono">

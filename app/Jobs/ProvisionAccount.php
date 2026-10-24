@@ -67,6 +67,23 @@ class ProvisionAccount implements ShouldQueue
             'started_at' => now(),
         ]);
 
+        // Initialize provisioning pipeline steps
+        $stepDefinitions = [
+            'create_user' => 'Create isolated Linux user',
+            'directories' => 'Create home & web root directories',
+            'quota' => 'Configure disk quota & permissions',
+            'php_pool' => 'Provision PHP-FPM isolated pool',
+            'vhost' => 'Generate & test Nginx vhost',
+            'ssl' => 'Issue default SSL/TLS certificate',
+            'database' => 'Initialize database & credentials',
+        ];
+
+        foreach ($stepDefinitions as $key => $label) {
+            $agentJob->createStep($key, $label);
+        }
+
+        $agentJob->getStep('create_user')?->markRunning('Setting up Linux user');
+
         $agentJob->recordLog(
             sprintf('Starting provisioning for %s on server %s', $this->account->linux_username, $server->name),
             'info'
@@ -86,6 +103,13 @@ class ProvisionAccount implements ShouldQueue
             }
 
             if ($response['success']) {
+                // Confirm all steps completed upon agent verification
+                foreach ($agentJob->provisioningSteps as $step) {
+                    if (! $step->isDone()) {
+                        $step->markDone('Verified by server agent');
+                    }
+                }
+
                 $agentJob->markCompleted($response['data']);
                 $this->account->transitionTo(AccountStatus::ACTIVE);
 
@@ -102,11 +126,20 @@ class ProvisionAccount implements ShouldQueue
                 );
             } else {
                 $err = $response['error'] ?? 'Agent indicated provisioning failure';
+                $currentStep = $agentJob->provisioningSteps()->where('status', 'running')->first() 
+                    ?? $agentJob->provisioningSteps()->where('status', 'pending')->first();
+                $currentStep?->markFailed($err);
+
                 $agentJob->markFailed($err);
                 $this->account->transitionTo(AccountStatus::FAILED, $err);
             }
         } catch (Throwable $e) {
             $agentJob->recordLog('Provisioning error: '.$e->getMessage(), 'error');
+            
+            $currentStep = $agentJob->provisioningSteps()->where('status', 'running')->first() 
+                ?? $agentJob->provisioningSteps()->where('status', 'pending')->first();
+            $currentStep?->markFailed($e->getMessage());
+
             $agentJob->markFailed($e->getMessage());
 
             if ($this->account->canTransitionTo(AccountStatus::FAILED)) {
