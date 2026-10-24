@@ -92,6 +92,13 @@ class AgentClient
         $timestamp = time();
         $nonce = bin2hex(random_bytes(16));
         $secret = (string) config('services.agent.secret', '');
+        $defaultSecret = 'test-agent-secret-key-change-me';
+
+        if (app()->environment('production') && ($secret === '' || hash_equals($defaultSecret, $secret))) {
+            throw new \RuntimeException(
+                'PANEL_AGENT_HMAC_SECRET must be configured to a non-default value in production.'
+            );
+        }
 
         $payloadJson = empty($payload)
             ? '{}'
@@ -238,8 +245,8 @@ class AgentClient
             );
         }
 
-        if ($status === 400 || $status === 422) {
-            $message = $json['error']['message'] ?? 'Invalid payload or request format';
+        if (in_array($status, [400, 422, 500], true)) {
+            $message = $this->extractErrorMessage($json, 'Invalid payload or request format');
 
             throw new AgentClientException(
                 sprintf('Agent payload rejection (%d): %s', $status, $message),
@@ -266,5 +273,35 @@ class AgentClient
             'request_id' => (string) ($json['request_id'] ?? $requestId),
             'action' => (string) ($json['action'] ?? $action),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $json
+     */
+    protected function extractErrorMessage(?array $json, string $default): string
+    {
+        $error = $json['error'] ?? null;
+        $message = $default;
+
+        if (is_string($error) && $error !== '') {
+            $message = $error;
+        } elseif (is_array($error)) {
+            $parts = [];
+            $errorMessage = $error['message'] ?? null;
+            $errorDetails = $error['details'] ?? null;
+
+            if (is_string($errorMessage) && $errorMessage !== '') {
+                $parts[] = $errorMessage;
+            }
+            if (is_string($errorDetails) && $errorDetails !== '') {
+                $parts[] = $errorDetails;
+            }
+
+            if ($parts !== []) {
+                $message = implode(' | ', $parts);
+            }
+        }
+
+        return Str::limit($message, 500, '');
     }
 }

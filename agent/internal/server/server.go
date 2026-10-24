@@ -278,11 +278,16 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 	s.metrics.Record(req.Action, metricStatus, durationMs)
 
+	status := http.StatusOK
 	if execErr != nil && !res.Success {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-	} else {
-		w.WriteHeader(http.StatusOK)
+		if errors.Is(execErr, actions.ErrValidation) {
+			status = http.StatusUnprocessableEntity
+		} else {
+			status = http.StatusInternalServerError
+		}
 	}
+
+	w.WriteHeader(status)
 
 	_ = json.NewEncoder(w).Encode(resp)
 }

@@ -40,6 +40,48 @@ php_admin_flag[log_errors] = on
 php_admin_value[error_log] = /home/{{.Username}}/logs/php_error.log
 `
 
+const nginxVhostTemplate = `server {
+    listen 80;
+    listen [::]:80;
+    server_name {{.PrimaryDomain}};
+
+    root /home/{{.Username}}/public_html;
+    index index.php index.html;
+
+    access_log /home/{{.Username}}/logs/access.log;
+    error_log /home/{{.Username}}/logs/error.log;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php{{.PHPVersion}}-fpm-{{.Username}}.sock;
+    }
+}
+`
+
+type commandExecutor interface {
+	CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error)
+	Run(ctx context.Context, name string, args ...string) error
+	LookPath(file string) (string, error)
+}
+
+type osCommandExecutor struct{}
+
+func (osCommandExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+}
+
+func (osCommandExecutor) Run(ctx context.Context, name string, args ...string) error {
+	return exec.CommandContext(ctx, name, args...).Run()
+}
+
+func (osCommandExecutor) LookPath(file string) (string, error) {
+	return exec.LookPath(file)
+}
+
 type AccountCreatePayload struct {
 	Username      string `json:"username"`
 	PrimaryDomain string `json:"primary_domain"`
@@ -52,10 +94,41 @@ type AccountCreatePayload struct {
 	MemoryLimitMB int    `json:"memory_limit_mb,omitempty"`
 }
 
-type AccountCreateAction struct{}
+type AccountCreateAction struct {
+	executor          commandExecutor
+	homeBaseDir       string
+	tempDir           string
+	phpConfigBaseDir  string
+	vhostAvailableDir string
+	vhostEnabledDir   string
+	systemdConfigDir  string
+	isLinux           bool
+}
 
 func NewAccountCreateAction() *AccountCreateAction {
-	return &AccountCreateAction{}
+	return &AccountCreateAction{
+		executor:          osCommandExecutor{},
+		homeBaseDir:       "/home",
+		tempDir:           "/tmp/panel-agent",
+		phpConfigBaseDir:  "/etc/php",
+		vhostAvailableDir: "/etc/nginx/sites-available",
+		vhostEnabledDir:   "/etc/nginx/sites-enabled",
+		systemdConfigDir:  "/etc/systemd/system",
+		isLinux:           runtime.GOOS == "linux",
+	}
+}
+
+func NewAccountCreateActionForTest(executor commandExecutor, homeBaseDir, tempDir, phpConfigBaseDir, vhostAvailableDir, vhostEnabledDir, systemdConfigDir string) *AccountCreateAction {
+	return &AccountCreateAction{
+		executor:          executor,
+		homeBaseDir:       homeBaseDir,
+		tempDir:           tempDir,
+		phpConfigBaseDir:  phpConfigBaseDir,
+		vhostAvailableDir: vhostAvailableDir,
+		vhostEnabledDir:   vhostEnabledDir,
+		systemdConfigDir:  systemdConfigDir,
+		isLinux:           true,
+	}
 }
 
 func (a *AccountCreateAction) Name() string {
@@ -108,6 +181,20 @@ func (a *AccountCreateAction) RenderPoolConfig(p AccountCreatePayload) (string, 
 	return buf.String(), nil
 }
 
+func (a *AccountCreateAction) renderVhostConfig(p AccountCreatePayload) (string, error) {
+	tmpl, err := template.New("vhost").Parse(nginxVhostTemplate)
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, p); err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
+}
+
 func (a *AccountCreateAction) Execute(ctx context.Context, payload []byte, dryRun bool) (*ActionResult, error) {
 	var p AccountCreatePayload
 	if err := json.Unmarshal(payload, &p); err != nil {
@@ -117,15 +204,17 @@ func (a *AccountCreateAction) Execute(ctx context.Context, payload []byte, dryRu
 		p.PHPVersion = "8.3"
 	}
 
+	homeDir := filepath.Join(a.homeBaseDir, p.Username)
 	logs := []string{fmt.Sprintf("initiating account.create for user '%s' (%s)", p.Username, p.PrimaryDomain)}
 
 	if dryRun {
 		poolConfig, _ := a.RenderPoolConfig(p)
 		logs = append(logs,
-			fmt.Sprintf("[dry-run] simulated useradd for '%s' with nologin shell and home /home/%s", p.Username, p.Username),
-			fmt.Sprintf("[dry-run] simulated directory layout: /home/%s/{public_html,logs,tmp,backups,.ssh}", p.Username),
+			fmt.Sprintf("[dry-run] simulated useradd for '%s' with nologin shell and home %s", p.Username, homeDir),
+			fmt.Sprintf("[dry-run] simulated directory layout: %s/{public_html,logs,tmp,backups,.ssh}", homeDir),
 			fmt.Sprintf("[dry-run] simulated quota apply: %d MB, %d inodes", p.StorageMB, p.Inodes),
 			fmt.Sprintf("[dry-run] rendered PHP-FPM pool for version %s (%d bytes)", p.PHPVersion, len(poolConfig)),
+			fmt.Sprintf("[dry-run] simulated Nginx vhost for %s", p.PrimaryDomain),
 			fmt.Sprintf("[dry-run] simulated systemd slice limits: %d cores, %d MB RAM", p.CPUCores, p.MemoryLimitMB),
 		)
 
@@ -134,7 +223,7 @@ func (a *AccountCreateAction) Execute(ctx context.Context, payload []byte, dryRu
 			Data: map[string]any{
 				"username":       p.Username,
 				"primary_domain": p.PrimaryDomain,
-				"home_dir":       fmt.Sprintf("/home/%s", p.Username),
+				"home_dir":       homeDir,
 				"php_version":    p.PHPVersion,
 				"pool_socket":    fmt.Sprintf("/run/php/php%s-fpm-%s.sock", p.PHPVersion, p.Username),
 				"dry_run":        true,
@@ -143,116 +232,55 @@ func (a *AccountCreateAction) Execute(ctx context.Context, payload []byte, dryRu
 		}, nil
 	}
 
-	// Real execution on target server (Linux)
-	homeDir := fmt.Sprintf("/home/%s", p.Username)
-
-	// Step 1: Create Linux user if it doesn't already exist
-	if runtime.GOOS == "linux" {
-		checkCmd := exec.CommandContext(ctx, "id", "-u", p.Username)
-		if err := checkCmd.Run(); err != nil {
-			// User does not exist, create with useradd (strict argument arrays only)
-			useradd := exec.CommandContext(ctx, "useradd",
-				"-m",
-				"-d", homeDir,
-				"-s", "/usr/sbin/nologin",
-				"-c", fmt.Sprintf("Hosting Account %s", p.Username),
-				p.Username,
-			)
-			if out, err := useradd.CombinedOutput(); err != nil {
-				return &ActionResult{
-					Success: false,
-					Error:   fmt.Sprintf("failed to create user: %v (%s)", err, strings.TrimSpace(string(out))),
-					Logs:    logs,
-				}, err
-			}
-			logs = append(logs, fmt.Sprintf("created system user '%s' with home '%s'", p.Username, homeDir))
-		} else {
-			logs = append(logs, fmt.Sprintf("system user '%s' already exists (idempotent)", p.Username))
-		}
-	} else {
-		logs = append(logs, fmt.Sprintf("mocked system user creation on non-linux OS (%s)", runtime.GOOS))
+	if !a.isLinux {
+		logs = append(logs, fmt.Sprintf("mocked system provisioning on non-linux OS (%s)", runtime.GOOS))
+		return &ActionResult{
+			Success: true,
+			Data: map[string]any{
+				"username":       p.Username,
+				"primary_domain": p.PrimaryDomain,
+				"home_dir":       homeDir,
+				"php_version":    p.PHPVersion,
+				"pool_socket":    fmt.Sprintf("/run/php/php%s-fpm-%s.sock", p.PHPVersion, p.Username),
+				"dry_run":        false,
+			},
+			Logs: logs,
+		}, nil
 	}
 
-	// Step 2: Establish directory layout
-	subdirs := []string{"public_html", "logs", "tmp", "backups", ".ssh"}
-	for _, sub := range subdirs {
-		dirPath := filepath.Join(homeDir, sub)
-		perm := os.FileMode(0700)
-		if sub == "public_html" || sub == "logs" {
-			perm = 0750
-		}
-		if err := os.MkdirAll(dirPath, perm); err != nil && runtime.GOOS == "linux" {
-			logs = append(logs, fmt.Sprintf("warning: failed creating %s: %v", dirPath, err))
-		}
+	if err := a.ensureUser(ctx, p.Username, homeDir); err != nil {
+		return a.stepFailure("create_user", err, logs)
+	}
+	logs = append(logs, fmt.Sprintf("user '%s' is present", p.Username))
+
+	if err := a.ensureDirectories(homeDir); err != nil {
+		return a.stepFailure("directories", err, logs)
 	}
 	logs = append(logs, "verified home directory layout")
 
-	// Step 3: Default index page if public_html is empty
-	indexPath := filepath.Join(homeDir, "public_html", "index.html")
-	if _, err := os.Stat(indexPath); os.IsNotExist(err) {
-		indexContent := fmt.Sprintf("<!DOCTYPE html><html><head><title>Welcome to %s</title></head><body><h1>Welcome to %s</h1><p>Website is successfully provisioned.</p></body></html>", p.PrimaryDomain, p.PrimaryDomain)
-		_ = os.WriteFile(indexPath, []byte(indexContent), 0644)
+	if err := a.ensureDefaultIndex(homeDir, p.PrimaryDomain); err != nil {
+		return a.stepFailure("directories", err, logs)
 	}
 
-	// Step 4: Render and deploy PHP-FPM pool configuration
-	poolConfigContent, err := a.RenderPoolConfig(p)
-	if err != nil {
-		return &ActionResult{Success: false, Error: err.Error(), Logs: logs}, err
+	if err := a.applyQuota(ctx, p); err != nil {
+		return a.stepFailure("quota", err, logs)
 	}
+	logs = append(logs, fmt.Sprintf("applied quota settings (%d MB, %d inodes)", p.StorageMB, p.Inodes))
 
-	poolDir := fmt.Sprintf("/etc/php/%s/fpm/pool.d", p.PHPVersion)
-	targetPoolFile := filepath.Join(poolDir, fmt.Sprintf("%s.conf", p.Username))
-
-	if runtime.GOOS == "linux" {
-		tempDir := "/tmp/panel-agent"
-		_ = os.MkdirAll(tempDir, 0700)
-		tempPoolFile := filepath.Join(tempDir, fmt.Sprintf("%s-fpm.conf", p.Username))
-
-		if err := os.WriteFile(tempPoolFile, []byte(poolConfigContent), 0640); err != nil {
-			return &ActionResult{Success: false, Error: fmt.Sprintf("writing temp fpm pool: %v", err), Logs: logs}, err
-		}
-
-		// Test configuration via php-fpm -t if binary exists
-		fpmBin := fmt.Sprintf("php-fpm%s", p.PHPVersion)
-		if _, err := exec.LookPath(fpmBin); err == nil {
-			testCmd := exec.CommandContext(ctx, fpmBin, "-t")
-			if out, err := testCmd.CombinedOutput(); err != nil {
-				_ = os.Remove(tempPoolFile)
-				return &ActionResult{
-					Success: false,
-					Error:   fmt.Sprintf("php-fpm syntax test failed: %s", strings.TrimSpace(string(out))),
-					Logs:    logs,
-				}, fmt.Errorf("php-fpm test failed: %s", string(out))
-			}
-		}
-
-		// Atomically install pool configuration
-		if err := os.MkdirAll(poolDir, 0755); err == nil {
-			_ = os.Rename(tempPoolFile, targetPoolFile)
-		}
-
-		// Reload PHP-FPM service (strict argument array)
-		fpmService := fmt.Sprintf("php%s-fpm", p.PHPVersion)
-		_ = exec.CommandContext(ctx, "systemctl", "reload", fpmService).Run()
-		logs = append(logs, fmt.Sprintf("deployed PHP-FPM pool and reloaded %s", fpmService))
-	} else {
-		logs = append(logs, fmt.Sprintf("simulated pool installation to %s", targetPoolFile))
+	if err := a.deployFpmPool(ctx, p); err != nil {
+		return a.stepFailure("php_pool", err, logs)
 	}
+	logs = append(logs, fmt.Sprintf("deployed PHP-FPM pool for PHP %s", p.PHPVersion))
 
-	// Step 5: Systemd slice resource limits (CPU / RAM)
-	if runtime.GOOS == "linux" && (p.CPUCores > 0 || p.MemoryLimitMB > 0) {
-		sliceDir := fmt.Sprintf("/etc/systemd/system/hpanel-%s.slice.d", p.Username)
-		_ = os.MkdirAll(sliceDir, 0755)
-		var sliceBuf strings.Builder
-		sliceBuf.WriteString("[Slice]\n")
-		if p.MemoryLimitMB > 0 {
-			sliceBuf.WriteString(fmt.Sprintf("MemoryMax=%dM\n", p.MemoryLimitMB))
-		}
-		if p.CPUCores > 0 {
-			sliceBuf.WriteString(fmt.Sprintf("CPUQuota=%d%%\n", p.CPUCores*100))
-		}
-		_ = os.WriteFile(filepath.Join(sliceDir, "50-limits.conf"), []byte(sliceBuf.String()), 0644)
-		_ = exec.CommandContext(ctx, "systemctl", "daemon-reload").Run()
+	if err := a.deployVhost(ctx, p); err != nil {
+		return a.stepFailure("vhost", err, logs)
+	}
+	logs = append(logs, fmt.Sprintf("deployed vhost for domain '%s'", p.PrimaryDomain))
+
+	if err := a.applySystemdSlice(ctx, p); err != nil {
+		return a.stepFailure("systemd_slice", err, logs)
+	}
+	if p.CPUCores > 0 || p.MemoryLimitMB > 0 {
 		logs = append(logs, "applied systemd slice resource limits")
 	}
 
@@ -272,3 +300,234 @@ func (a *AccountCreateAction) Execute(ctx context.Context, payload []byte, dryRu
 	}, nil
 }
 
+func (a *AccountCreateAction) stepFailure(step string, err error, logs []string) (*ActionResult, error) {
+	msg := fmt.Sprintf("step '%s' failed: %v", step, err)
+	logs = append(logs, msg)
+
+	return &ActionResult{
+		Success: false,
+		Error:   msg,
+		Logs:    logs,
+	}, err
+}
+
+func (a *AccountCreateAction) ensureUser(ctx context.Context, username, homeDir string) error {
+	if err := a.executor.Run(ctx, "id", "-u", username); err == nil {
+		return nil
+	}
+
+	out, err := a.executor.CombinedOutput(ctx, "useradd",
+		"-m",
+		"-d", homeDir,
+		"-s", "/usr/sbin/nologin",
+		"-c", fmt.Sprintf("Hosting Account %s", username),
+		username,
+	)
+	if err != nil {
+		trimmed := strings.TrimSpace(string(out))
+		if strings.Contains(strings.ToLower(trimmed), "already exists") {
+			return nil
+		}
+		return fmt.Errorf("failed to create user: %v (%s)", err, trimmed)
+	}
+
+	return nil
+}
+
+func (a *AccountCreateAction) ensureDirectories(homeDir string) error {
+	subdirs := []string{"public_html", "logs", "tmp", "backups", ".ssh"}
+	for _, sub := range subdirs {
+		dirPath := filepath.Join(homeDir, sub)
+		perm := os.FileMode(0700)
+		if sub == "public_html" || sub == "logs" {
+			perm = 0750
+		}
+		if err := os.MkdirAll(dirPath, perm); err != nil {
+			return fmt.Errorf("creating %s: %w", dirPath, err)
+		}
+	}
+
+	return nil
+}
+
+func (a *AccountCreateAction) ensureDefaultIndex(homeDir, domain string) error {
+	indexPath := filepath.Join(homeDir, "public_html", "index.html")
+	if _, err := os.Stat(indexPath); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("checking %s: %w", indexPath, err)
+	}
+
+	indexContent := fmt.Sprintf("<!DOCTYPE html><html><head><title>Welcome to %s</title></head><body><h1>Welcome to %s</h1><p>Website is successfully provisioned.</p></body></html>", domain, domain)
+	if err := os.WriteFile(indexPath, []byte(indexContent), 0644); err != nil {
+		return fmt.Errorf("writing %s: %w", indexPath, err)
+	}
+
+	return nil
+}
+
+func (a *AccountCreateAction) applyQuota(ctx context.Context, p AccountCreatePayload) error {
+	if _, err := a.executor.LookPath("setquota"); err != nil {
+		return nil
+	}
+
+	blocks := p.StorageMB * 1024
+	_, err := a.executor.CombinedOutput(ctx, "setquota",
+		"-u",
+		p.Username,
+		fmt.Sprintf("%d", blocks),
+		fmt.Sprintf("%d", blocks),
+		fmt.Sprintf("%d", p.Inodes),
+		fmt.Sprintf("%d", p.Inodes),
+		"/",
+	)
+	if err != nil {
+		return fmt.Errorf("setquota command failed: %w", err)
+	}
+
+	return nil
+}
+
+func (a *AccountCreateAction) deployFpmPool(ctx context.Context, p AccountCreatePayload) error {
+	poolConfigContent, err := a.RenderPoolConfig(p)
+	if err != nil {
+		return fmt.Errorf("rendering fpm pool: %w", err)
+	}
+
+	if err := os.MkdirAll(a.tempDir, 0700); err != nil {
+		return fmt.Errorf("creating temp dir: %w", err)
+	}
+	tempPoolFile := filepath.Join(a.tempDir, fmt.Sprintf("%s-fpm.conf", p.Username))
+	if err := os.WriteFile(tempPoolFile, []byte(poolConfigContent), 0640); err != nil {
+		return fmt.Errorf("writing temp fpm pool: %w", err)
+	}
+
+	fpmBin, err := a.resolveFpmBinary(p.PHPVersion)
+	if err != nil {
+		_ = os.Remove(tempPoolFile)
+		return err
+	}
+	if out, err := a.executor.CombinedOutput(ctx, fpmBin, "-t"); err != nil {
+		_ = os.Remove(tempPoolFile)
+		return fmt.Errorf("php-fpm syntax test failed: %s", strings.TrimSpace(string(out)))
+	}
+
+	poolDir := filepath.Join(a.phpConfigBaseDir, p.PHPVersion, "fpm", "pool.d")
+	if err := os.MkdirAll(poolDir, 0755); err != nil {
+		_ = os.Remove(tempPoolFile)
+		return fmt.Errorf("creating pool directory: %w", err)
+	}
+	targetPoolFile := filepath.Join(poolDir, fmt.Sprintf("%s.conf", p.Username))
+	if err := os.Rename(tempPoolFile, targetPoolFile); err != nil {
+		_ = os.Remove(tempPoolFile)
+		return fmt.Errorf("installing pool config: %w", err)
+	}
+
+	if err := a.executor.Run(ctx, "systemctl", "reload", fmt.Sprintf("php%s-fpm", p.PHPVersion)); err != nil {
+		return fmt.Errorf("reloading php%s-fpm: %w", p.PHPVersion, err)
+	}
+
+	return nil
+}
+
+func (a *AccountCreateAction) resolveFpmBinary(version string) (string, error) {
+	candidates := []string{fmt.Sprintf("php-fpm%s", version), fmt.Sprintf("php-fpm%s", strings.ReplaceAll(version, ".", ""))}
+	for _, candidate := range candidates {
+		if _, err := a.executor.LookPath(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("php-fpm binary not found for version %s", version)
+}
+
+func (a *AccountCreateAction) deployVhost(ctx context.Context, p AccountCreatePayload) error {
+	configContent, err := a.renderVhostConfig(p)
+	if err != nil {
+		return fmt.Errorf("rendering vhost template: %w", err)
+	}
+
+	if err := os.MkdirAll(a.tempDir, 0700); err != nil {
+		return fmt.Errorf("creating temp dir: %w", err)
+	}
+	if err := os.MkdirAll(a.vhostAvailableDir, 0755); err != nil {
+		return fmt.Errorf("ensuring vhost available dir: %w", err)
+	}
+	if err := os.MkdirAll(a.vhostEnabledDir, 0755); err != nil {
+		return fmt.Errorf("ensuring vhost enabled dir: %w", err)
+	}
+
+	tempPath := filepath.Join(a.tempDir, fmt.Sprintf("%s-nginx.conf", p.PrimaryDomain))
+	targetPath := filepath.Join(a.vhostAvailableDir, fmt.Sprintf("%s.conf", p.PrimaryDomain))
+	symlinkPath := filepath.Join(a.vhostEnabledDir, fmt.Sprintf("%s.conf", p.PrimaryDomain))
+
+	if err := os.WriteFile(tempPath, []byte(configContent), 0644); err != nil {
+		return fmt.Errorf("writing temp vhost file: %w", err)
+	}
+	if err := os.Rename(tempPath, targetPath); err != nil {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("installing vhost file: %w", err)
+	}
+
+	if info, err := os.Lstat(symlinkPath); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			currentTarget, readErr := os.Readlink(symlinkPath)
+			if readErr == nil && currentTarget == targetPath {
+				// already linked correctly
+			} else {
+				if removeErr := os.Remove(symlinkPath); removeErr != nil {
+					return fmt.Errorf("removing old symlink: %w", removeErr)
+				}
+				if linkErr := os.Symlink(targetPath, symlinkPath); linkErr != nil {
+					return fmt.Errorf("creating vhost symlink: %w", linkErr)
+				}
+			}
+		} else {
+			return fmt.Errorf("path exists and is not a symlink: %s", symlinkPath)
+		}
+	} else if errors.Is(err, os.ErrNotExist) {
+		if linkErr := os.Symlink(targetPath, symlinkPath); linkErr != nil {
+			return fmt.Errorf("creating vhost symlink: %w", linkErr)
+		}
+	} else {
+		return fmt.Errorf("checking vhost symlink: %w", err)
+	}
+
+	if out, err := a.executor.CombinedOutput(ctx, "nginx", "-t"); err != nil {
+		return fmt.Errorf("nginx config test failed: %s", strings.TrimSpace(string(out)))
+	}
+	if err := a.executor.Run(ctx, "systemctl", "reload", "nginx"); err != nil {
+		return fmt.Errorf("reloading nginx: %w", err)
+	}
+
+	return nil
+}
+
+func (a *AccountCreateAction) applySystemdSlice(ctx context.Context, p AccountCreatePayload) error {
+	if p.CPUCores <= 0 && p.MemoryLimitMB <= 0 {
+		return nil
+	}
+
+	sliceDir := filepath.Join(a.systemdConfigDir, fmt.Sprintf("hpanel-%s.slice.d", p.Username))
+	if err := os.MkdirAll(sliceDir, 0755); err != nil {
+		return fmt.Errorf("creating slice directory: %w", err)
+	}
+
+	var sliceBuf strings.Builder
+	sliceBuf.WriteString("[Slice]\n")
+	if p.MemoryLimitMB > 0 {
+		sliceBuf.WriteString(fmt.Sprintf("MemoryMax=%dM\n", p.MemoryLimitMB))
+	}
+	if p.CPUCores > 0 {
+		sliceBuf.WriteString(fmt.Sprintf("CPUQuota=%d%%\n", p.CPUCores*100))
+	}
+	if err := os.WriteFile(filepath.Join(sliceDir, "50-limits.conf"), []byte(sliceBuf.String()), 0644); err != nil {
+		return fmt.Errorf("writing slice limits: %w", err)
+	}
+
+	if err := a.executor.Run(ctx, "systemctl", "daemon-reload"); err != nil {
+		return fmt.Errorf("systemd daemon-reload: %w", err)
+	}
+
+	return nil
+}

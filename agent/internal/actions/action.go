@@ -9,6 +9,7 @@ import (
 
 var (
 	ErrUnknownAction = errors.New("actions: unknown action requested")
+	ErrValidation    = errors.New("actions: validation failed")
 )
 
 // ActionResult encapsulates the structured output, data, and log lines of an executed action.
@@ -66,7 +67,7 @@ func (r *Registry) Execute(ctx context.Context, name string, payload []byte, dry
 			Success: false,
 			Error:   fmt.Sprintf("validation failed: %v", err),
 			Logs:    []string{fmt.Sprintf("payload validation error on '%s': %v", name, err)},
-		}, err
+		}, fmt.Errorf("%w: %v", ErrValidation, err)
 	}
 
 	return act.Execute(ctx, payload, dryRun)
