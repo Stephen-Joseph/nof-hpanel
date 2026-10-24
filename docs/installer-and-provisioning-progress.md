@@ -73,3 +73,4 @@ Lightweight, self-contained Alpine.js mini-games located in `resources/js/games/
 ## 5. Failure Recovery & Error Trapping
 - On installer error, the script traps `ERR`, halts execution, identifies the failing step, and prints the last 20 log lines from `/var/log/hpanel-install.log`.
 - On web panel failure, the specific failing step transitions to `failed` status, and an inline `Retry` action is presented to re-dispatch the job.
+

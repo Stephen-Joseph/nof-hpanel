@@ -108,3 +108,4 @@ class ProvisioningStep extends Model
         return (int) $this->started_at->diffInSeconds($end);
     }
 }
+

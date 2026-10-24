@@ -175,3 +175,4 @@ test('account detail page polls during provisioning and stops when complete', fu
         ->test(AccountDetail::class, ['account' => $account])
         ->assertDontSeeHtml('wire:poll.2s');
 });
+
