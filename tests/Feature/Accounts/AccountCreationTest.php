@@ -147,3 +147,79 @@ test('authorized user can suspend and unsuspend account via detail livewire', fu
         'target_id' => $account->id,
     ]);
 });
+
+test('customer dropdown shows all customers for admin and placeholder option', function () {
+    $customer2 = User::factory()->customer()->create([
+        'name' => 'Bob Customer',
+        'email' => 'bob@example.com',
+    ]);
+
+    Livewire::actingAs($this->admin)
+        ->test(AccountCreate::class)
+        ->assertSee('Select customer...')
+        ->assertSee($this->customer->name)
+        ->assertSee($this->customer->email)
+        ->assertSee('Bob Customer')
+        ->assertSee('bob@example.com');
+});
+
+test('empty state renders when no customers exist with link to user creation', function () {
+    // Delete all customers
+    User::where('role', \App\Enums\UserRole::CUSTOMER)->delete();
+
+    Livewire::actingAs($this->admin)
+        ->test(AccountCreate::class)
+        ->assertSee('No customers yet. Create a customer first.')
+        ->assertSee(route('users.create'));
+});
+
+test('customer dropdown scopes customers for reseller to their own subtree', function () {
+    $reseller = User::factory()->reseller()->create();
+    $resellerCustomer = User::factory()->customer()->create([
+        'name' => 'Reseller Client',
+        'email' => 'reseller_client@example.com',
+        'parent_id' => $reseller->id,
+    ]);
+    $otherCustomer = User::factory()->customer()->create([
+        'name' => 'Stranger Client',
+        'email' => 'stranger@example.com',
+    ]);
+
+    Livewire::actingAs($reseller)
+        ->test(AccountCreate::class)
+        ->assertSee('Reseller Client')
+        ->assertDontSee('Stranger Client');
+});
+
+test('wire:model retains selected customer after validation error', function () {
+    Livewire::actingAs($this->admin)
+        ->test(AccountCreate::class)
+        ->set('user_id', $this->customer->id)
+        ->set('linux_username', 'invalid username with spaces') // invalid to trigger error
+        ->call('save')
+        ->assertHasErrors(['linux_username'])
+        ->assertSet('user_id', $this->customer->id);
+});
+
+test('full account creation flow creates row and flashes success message', function () {
+    Queue::fake();
+
+    $testComponent = Livewire::actingAs($this->admin)
+        ->test(AccountCreate::class)
+        ->set('user_id', $this->customer->id)
+        ->set('server_id', $this->server->id)
+        ->set('package_id', $this->package->id)
+        ->set('linux_username', 'endtoend')
+        ->set('primary_domain', 'endtoend.com')
+        ->call('save');
+
+    $account = Account::where('linux_username', 'endtoend')->first();
+    expect($account)->not->toBeNull();
+    expect($account->user_id)->toBe($this->customer->id);
+    expect($account->server_id)->toBe($this->server->id);
+    expect($account->package_id)->toBe($this->package->id);
+    expect($account->primary_domain)->toBe('endtoend.com');
+
+    $testComponent->assertRedirect(route('accounts.show', $account));
+    $testComponent->assertSessionHas('status', "Account {$account->linux_username} successfully created and enqueued for provisioning.");
+});

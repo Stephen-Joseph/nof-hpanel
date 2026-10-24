@@ -51,7 +51,12 @@ class AccountCreate extends Component
 
         // If reseller, default to first customer in subtree if any
         if ($actor->isReseller()) {
-            $firstCustomer = $actor->children()->first();
+            $firstCustomer = User::where('role', UserRole::CUSTOMER)
+                ->where(function ($q) use ($actor) {
+                    $q->where('parent_id', $actor->id)
+                        ->orWhereIn('id', $actor->getAllDescendantIds());
+                })
+                ->first();
             if ($firstCustomer) {
                 $this->user_id = $firstCustomer->id;
             }
@@ -171,13 +176,18 @@ class AccountCreate extends Component
         /** @var User $actor */
         $actor = Auth::user();
 
-        // Customers list according to tenancy
-        $customers = $actor->isAdmin()
-            ? User::where('role', UserRole::CUSTOMER)->orderBy('name')->get()
-            : User::whereIn('id', $actor->getAllDescendantIds())
-                ->where('role', UserRole::CUSTOMER)
-                ->orderBy('name')
-                ->get();
+        // Customers list according to tenancy: Resellers see their own subtree; Admins see all
+        $customersQuery = User::where('role', UserRole::CUSTOMER);
+
+        if (! $actor->isAdmin()) {
+            $descendantIds = $actor->getAllDescendantIds();
+            $customersQuery->where(function ($q) use ($actor, $descendantIds) {
+                $q->where('parent_id', $actor->id)
+                    ->orWhereIn('id', $descendantIds);
+            });
+        }
+
+        $customers = $customersQuery->orderBy('name')->get();
 
         $packages = Package::availableFor($actor)->orderBy('name')->get();
         $servers = Server::where('status', ServerStatus::ACTIVE)->orderBy('name')->get();

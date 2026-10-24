@@ -20,13 +20,29 @@
             <!-- Customer selection -->
             <div>
                 <label class="block text-xs font-medium text-muted mb-1.5">Customer (Account Owner)</label>
-                <x-ui.select wire:model="user_id" required>
-                    <option value="">Select customer...</option>
-                    @foreach ($customers as $cust)
-                        <option value="{{ $cust->id }}">{{ $cust->name }} ({{ $cust->email }})</option>
-                    @endforeach
-                </x-ui.select>
-                @error('user_id') <span class="text-xs text-rose-500 block mt-1">{{ $message }}</span> @enderror
+                @if ($customers->isEmpty())
+                    <div class="rounded-xl border border-dashed border-[var(--border)] p-5 text-center bg-[var(--bg-shell)] space-y-3">
+                        <div class="w-10 h-10 mx-auto rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500">
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                            </svg>
+                        </div>
+                        <p class="text-xs text-[var(--text-muted)]">No customers yet. Create a customer first.</p>
+                        <div>
+                            <x-ui.button href="{{ route('users.create') }}" variant="primary" size="sm">
+                                Create a customer first
+                            </x-ui.button>
+                        </div>
+                    </div>
+                @else
+                    <x-ui.select wire:model="user_id" required>
+                        <option value="" disabled {{ is_null($user_id) ? 'selected' : '' }}>Select customer...</option>
+                        @foreach ($customers as $user)
+                            <option value="{{ $user->id }}">{{ $user->name }} ({{ $user->email }})</option>
+                        @endforeach
+                    </x-ui.select>
+                    @error('user_id') <span class="text-xs text-rose-500 block mt-1">{{ $message }}</span> @enderror
+                @endif
             </div>
 
             <!-- Server selection -->

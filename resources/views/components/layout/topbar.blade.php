@@ -18,6 +18,11 @@
             </svg>
         </button>
 
+        <!-- Mobile brand logo -->
+        <a href="{{ route('dashboard') }}" wire:navigate class="lg:hidden flex items-center shrink-0">
+            <img src="{{ asset('H-Paneltm(1).png') }}" alt="{{ config('app.name', 'HPanel') }}" class="h-7 w-auto max-w-[120px] object-contain" />
+        </a>
+
         <!-- Global Search Palette Trigger -->
         <livewire:navigation.global-search />
     </div>

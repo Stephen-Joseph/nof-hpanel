@@ -7,22 +7,14 @@
 <div class="flex flex-col h-full justify-between p-4 sm:p-5 select-none">
     <!-- Top Section: Brand & Nav Links -->
     <div class="space-y-6">
-        <!-- Logo & Product Name -->
+        <!-- Logo Banner -->
         <div class="px-2 pt-1 flex items-center justify-between">
-            <a href="{{ route('dashboard') }}" wire:navigate class="flex items-center gap-3 group">
-                <span class="w-9 h-9 rounded-2xl bg-gradient-primary text-white font-black text-lg flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform duration-150">
-                    <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                </span>
-                <div>
-                    <span class="text-base font-bold tracking-tight text-[var(--text)] block leading-none">
-                        {{ config('app.name', 'HPanel') }}
-                    </span>
-                    <span class="text-[10px] font-semibold text-[var(--text-muted)] tracking-wider uppercase block mt-1">
-                        Cloud Platform
-                    </span>
-                </div>
+            <a href="{{ route('dashboard') }}" wire:navigate class="flex items-center group py-1">
+                <img 
+                    src="{{ asset('H-Paneltm(1).png') }}" 
+                    alt="{{ config('app.name', 'HPanel') }}" 
+                    class="h-10 w-auto max-w-[200px] object-contain group-hover:opacity-95 transition-all duration-150" 
+                />
             </a>
         </div>
 

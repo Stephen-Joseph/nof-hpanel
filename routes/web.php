@@ -86,10 +86,14 @@ Route::middleware('auth')->group(function () {
         })->middleware('can:update,server')->name('servers.edit');
     });
 
-    // Reseller Control Center
+    // Reseller Control Center & Customer Management
     Route::get('/reseller', function () {
         return view('reseller.index');
     })->name('reseller.index');
+
+    Route::get('/users/create', function () {
+        return redirect()->route('reseller.index');
+    })->name('users.create');
 
     // Packages
     Route::get('/packages', function () {

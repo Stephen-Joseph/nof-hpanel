@@ -34,18 +34,14 @@
 
     <div class="sm:mx-auto sm:w-full sm:max-w-md">
         <div class="text-center">
-            <a href="/" class="inline-flex items-center gap-2.5">
-                <div class="w-10 h-10 rounded-full bg-gradient-primary flex items-center justify-center text-white shadow-xs shrink-0" style="width: 40px; height: 40px;">
-                    <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                        <circle cx="12" cy="12" r="9" />
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4" />
-                    </svg>
-                </div>
-                <span class="text-2xl font-bold tracking-tight text-[var(--text)]">
-                    {{ config('app.name', 'HPanel') }}
-                </span>
+            <a href="/" class="inline-flex items-center justify-center group mb-2">
+                <img 
+                    src="{{ asset('H-Paneltm(1).png') }}" 
+                    alt="{{ config('app.name', 'HPanel') }}" 
+                    class="h-14 sm:h-16 w-auto max-w-[260px] object-contain mx-auto group-hover:opacity-95 transition-opacity duration-150" 
+                />
             </a>
-            <p class="mt-2 text-xs text-[var(--text-muted)]">cPanel-Style Cloud Hosting Management</p>
+            <p class="text-xs text-[var(--text-muted)]">cPanel-Style Cloud Hosting Management</p>
         </div>
     </div>
 
