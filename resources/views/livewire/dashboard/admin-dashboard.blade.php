@@ -30,7 +30,7 @@
     </div>
 
     <!-- Row 1: Four Stat Tiles (Tile 1 Highlighted with Primary Gradient) -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6" wire:poll.30s>
         <!-- Tile 1: Server Nodes (HIGHLIGHTED) -->
         <x-ui.stat-tile
             title="Server Nodes"

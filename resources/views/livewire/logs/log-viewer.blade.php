@@ -134,7 +134,7 @@
                     </div>
                 </div>
 
-                <div class="p-4 font-mono text-[11px] leading-relaxed max-h-[550px] overflow-y-auto overflow-x-auto text-main select-text bg-[#0d131f] text-slate-200">
+                <div class="p-4 font-mono text-[11px] leading-relaxed max-h-[550px] overflow-y-auto overflow-x-auto select-text bg-[var(--bg-shell)] text-[var(--text)]">
                     @forelse ($logContent as $idx => $line)
                         <div class="flex gap-3 hover:bg-white/5 py-0.5 px-1 rounded transition-colors">
                             <span class="text-slate-600 select-none text-right w-8 inline-block shrink-0">{{ $idx + 1 }}</span>

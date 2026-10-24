@@ -204,7 +204,7 @@
                     <!-- Logs Stream -->
                     <div>
                         <h4 class="text-xs font-semibold uppercase tracking-wider text-muted mb-2">Agent Execution Logs</h4>
-                        <div class="bg-[#0d131f] rounded-[16px] p-3.5 border border-border font-mono text-xs space-y-1.5 max-h-60 overflow-y-auto">
+                        <div class="bg-[var(--bg-shell)] rounded-[16px] p-3.5 border border-border font-mono text-xs space-y-1.5 max-h-60 overflow-y-auto">
                             @forelse ($selectedJob->logs as $log)
                                 <div class="flex items-start space-x-2">
                                     <span class="text-slate-600 select-none text-[10px]">{{ $log->created_at->format('H:i:s') }}</span>

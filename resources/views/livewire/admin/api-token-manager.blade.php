@@ -1,110 +1,104 @@
 <div>
-    <div class="sm:flex sm:items-center sm:justify-between mb-6">
-        <div>
-            <h2 class="text-2xl font-bold text-white tracking-tight">API Tokens &amp; Webhooks</h2>
-            <p class="text-sm text-slate-400 mt-1">Manage external billing API access, scoped Bearer tokens, and webhook deliveries.</p>
-        </div>
-    </div>
+    <x-layout.page-header 
+        title="API Tokens &amp; Webhooks" 
+        subtitle="Manage external billing API access, scoped Bearer tokens, and webhook deliveries."
+    />
 
     @if (session()->has('status'))
-        <div class="mb-6 rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-4 text-sm text-emerald-400">
+        <div class="mb-6 rounded-[20px] bg-emerald-500/10 border border-emerald-500/20 p-4 text-sm text-emerald-600 dark:text-emerald-400">
             {{ session('status') }}
         </div>
     @endif
 
     <!-- Generated Plaintext Token Alert -->
     @if ($generatedPlainTextToken)
-        <div class="mb-6 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300">
-            <h4 class="text-sm font-bold text-white mb-1">New API Token Generated</h4>
-            <p class="text-xs text-indigo-300/80 mb-3">Copy this token now. For security reasons, you will never be able to see it again.</p>
+        <div class="mb-6 p-4 rounded-[20px] bg-primary-500/10 border border-primary-500/30 text-primary-500">
+            <h4 class="text-sm font-bold text-main mb-1">New API Token Generated</h4>
+            <p class="text-xs text-muted mb-3">Copy this token now. For security reasons, you will never be able to see it again.</p>
             <div class="flex items-center gap-2">
-                <input type="text" readonly value="{{ $generatedPlainTextToken }}" class="font-mono text-xs w-full p-2.5 bg-slate-900 border border-indigo-500/40 rounded-lg text-white select-all">
-                <button type="button" wire:click="$set('generatedPlainTextToken', null)" class="px-3 py-2 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700">
+                <input type="text" readonly value="{{ $generatedPlainTextToken }}" class="font-mono text-xs w-full px-3.5 py-2 bg-card border border-primary-500/40 rounded-full text-main select-all outline-hidden">
+                <x-ui.button type="button" wire:click="$set('generatedPlainTextToken', null)" variant="outline" size="sm">
                     Dismiss
-                </button>
+                </x-ui.button>
             </div>
         </div>
     @endif
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <!-- Create Token Form -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 lg:col-span-1">
-            <h3 class="text-base font-semibold text-white mb-4">Create API Token</h3>
+        <x-ui.card class="lg:col-span-1">
+            <h3 class="text-base font-semibold text-main mb-4">Create API Token</h3>
             <form wire:submit="createToken" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Token Name / Client</label>
-                    <input type="text" wire:model="tokenName" placeholder="e.g. WHMCS Production"
-                        class="w-full rounded-lg bg-slate-800 border-slate-700 text-white text-sm px-3 py-2 border focus:ring-1 focus:ring-indigo-500">
-                    @error('tokenName') <span class="text-xs text-rose-400 block mt-1">{{ $message }}</span> @enderror
+                    <label class="block text-xs font-medium text-muted mb-1.5">Token Name / Client</label>
+                    <x-ui.input type="text" wire:model="tokenName" placeholder="e.g. WHMCS Production" />
+                    @error('tokenName') <span class="text-xs text-rose-500 block mt-1">{{ $message }}</span> @enderror
                 </div>
 
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Scopes (comma-separated)</label>
-                    <input type="text" wire:model="selectedScopes" placeholder="* or accounts:read,accounts:write"
-                        class="w-full rounded-lg bg-slate-800 border-slate-700 text-white font-mono text-xs px-3 py-2 border focus:ring-1 focus:ring-indigo-500">
-                    @error('selectedScopes') <span class="text-xs text-rose-400 block mt-1">{{ $message }}</span> @enderror
+                    <label class="block text-xs font-medium text-muted mb-1.5">Scopes (comma-separated)</label>
+                    <x-ui.input type="text" wire:model="selectedScopes" placeholder="* or accounts:read,accounts:write" class="font-mono text-xs" />
+                    @error('selectedScopes') <span class="text-xs text-rose-500 block mt-1">{{ $message }}</span> @enderror
                 </div>
 
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">IP Allowlist (optional, comma-separated)</label>
-                    <input type="text" wire:model="ipAllowlist" placeholder="e.g. 192.168.1.100, 10.0.0.0/24"
-                        class="w-full rounded-lg bg-slate-800 border-slate-700 text-white font-mono text-xs px-3 py-2 border focus:ring-1 focus:ring-indigo-500">
+                    <label class="block text-xs font-medium text-muted mb-1.5">IP Allowlist (optional, comma-separated)</label>
+                    <x-ui.input type="text" wire:model="ipAllowlist" placeholder="e.g. 192.168.1.100, 10.0.0.0/24" class="font-mono text-xs" />
                 </div>
 
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Expires In (Days)</label>
-                    <input type="number" wire:model="expiresInDays"
-                        class="w-full rounded-lg bg-slate-800 border-slate-700 text-white text-sm px-3 py-2 border focus:ring-1 focus:ring-indigo-500">
+                    <label class="block text-xs font-medium text-muted mb-1.5">Expires In (Days)</label>
+                    <x-ui.input type="number" wire:model="expiresInDays" />
                 </div>
 
-                <button type="submit" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg shadow transition">
+                <x-ui.button type="submit" variant="primary" class="w-full">
                     Generate API Token
-                </button>
+                </x-ui.button>
             </form>
-        </div>
+        </x-ui.card>
 
         <!-- Tokens List -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm lg:col-span-2 flex flex-col">
-            <div class="px-6 py-4 border-b border-slate-800">
-                <h3 class="text-base font-semibold text-white">Active API Tokens</h3>
+        <x-ui.card class="p-0 overflow-hidden lg:col-span-2 flex flex-col">
+            <div class="px-6 py-4 border-b border-border">
+                <h3 class="text-base font-semibold text-main">Active API Tokens</h3>
             </div>
             <div class="overflow-x-auto flex-1">
-                <table class="min-w-full divide-y divide-slate-800 text-left text-xs">
-                    <thead class="bg-slate-800/50 text-slate-400 uppercase font-semibold">
-                        <tr>
-                            <th class="px-4 py-3">Name</th>
-                            <th class="px-4 py-3">Scopes</th>
-                            <th class="px-4 py-3">Last Used</th>
-                            <th class="px-4 py-3">Status</th>
-                            <th class="px-4 py-3 text-right">Actions</th>
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr class="border-b border-border bg-shell/50 text-muted font-medium">
+                            <th class="py-3 px-6">Name</th>
+                            <th class="py-3 px-6">Scopes</th>
+                            <th class="py-3 px-6">Last Used</th>
+                            <th class="py-3 px-6">Status</th>
+                            <th class="py-3 px-6 text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-800 text-slate-300">
+                    <tbody class="divide-y divide-border text-main">
                         @forelse ($tokens as $token)
-                            <tr class="hover:bg-slate-800/30 transition">
-                                <td class="px-4 py-3">
-                                    <div class="font-bold text-white">{{ $token->name }}</div>
-                                    <div class="font-mono text-[10px] text-slate-500">{{ substr($token->token_hash, 0, 12) }}...</div>
+                            <tr class="hover:bg-shell/40 transition">
+                                <td class="px-6 py-3.5">
+                                    <div class="font-bold text-main">{{ $token->name }}</div>
+                                    <div class="font-mono text-[10px] text-muted">{{ substr($token->token_hash, 0, 12) }}...</div>
                                 </td>
-                                <td class="px-4 py-3 font-mono text-slate-400">
+                                <td class="px-6 py-3.5 font-mono text-muted">
                                     {{ implode(', ', $token->scopes ?? ['*']) }}
                                 </td>
-                                <td class="px-4 py-3 text-slate-400">
+                                <td class="px-6 py-3.5 text-muted">
                                     {{ $token->last_used_at?->diffForHumans() ?? 'Never' }}
                                 </td>
-                                <td class="px-4 py-3">
+                                <td class="px-6 py-3.5">
                                     @if ($token->isRevoked())
-                                        <span class="px-2 py-0.5 rounded text-[10px] bg-rose-500/10 text-rose-400 border border-rose-500/20">Revoked</span>
+                                        <x-ui.chip variant="danger" size="sm">Revoked</x-ui.chip>
                                     @elseif ($token->isExpired())
-                                        <span class="px-2 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20">Expired</span>
+                                        <x-ui.chip variant="warning" size="sm">Expired</x-ui.chip>
                                     @else
-                                        <span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Active</span>
+                                        <x-ui.chip variant="success" size="sm">Active</x-ui.chip>
                                     @endif
                                 </td>
-                                <td class="px-4 py-3 text-right">
+                                <td class="px-6 py-3.5 text-right">
                                     @if (! $token->isRevoked())
                                         <button wire:click="revokeToken({{ $token->id }})" wire:confirm="Are you sure you want to revoke this API token?"
-                                            class="text-rose-400 hover:text-rose-300 font-medium">
+                                            class="text-rose-500 hover:text-rose-600 font-medium cursor-pointer">
                                             Revoke
                                         </button>
                                     @endif
@@ -112,85 +106,82 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="px-4 py-6 text-center text-slate-500">No API tokens configured.</td>
+                                <td colspan="5" class="px-6 py-6 text-center text-muted text-xs">No API tokens configured.</td>
                             </tr>
                         @endforelse
                     </tbody>
                 </table>
             </div>
-        </div>
+        </x-ui.card>
     </div>
 
     <!-- Webhooks Section -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Register Webhook -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 lg:col-span-1">
-            <h3 class="text-base font-semibold text-white mb-4">Register Webhook Endpoint</h3>
+        <x-ui.card class="lg:col-span-1">
+            <h3 class="text-base font-semibold text-main mb-4">Register Webhook Endpoint</h3>
             <form wire:submit="createWebhook" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Payload URL</label>
-                    <input type="url" wire:model="webhookUrl" placeholder="https://billing.example.com/webhooks"
-                        class="w-full rounded-lg bg-slate-800 border-slate-700 text-white text-sm px-3 py-2 border focus:ring-1 focus:ring-indigo-500">
-                    @error('webhookUrl') <span class="text-xs text-rose-400 block mt-1">{{ $message }}</span> @enderror
+                    <label class="block text-xs font-medium text-muted mb-1.5">Payload URL</label>
+                    <x-ui.input type="url" wire:model="webhookUrl" placeholder="https://billing.example.com/webhooks" />
+                    @error('webhookUrl') <span class="text-xs text-rose-500 block mt-1">{{ $message }}</span> @enderror
                 </div>
 
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Subscribed Events</label>
-                    <input type="text" wire:model="webhookEvents"
-                        class="w-full rounded-lg bg-slate-800 border-slate-700 text-white font-mono text-xs px-3 py-2 border focus:ring-1 focus:ring-indigo-500">
-                    <p class="text-[10px] text-slate-500 mt-1">e.g. account.created, account.suspended, account.terminated, ssl.issued</p>
+                    <label class="block text-xs font-medium text-muted mb-1.5">Subscribed Events</label>
+                    <x-ui.input type="text" wire:model="webhookEvents" class="font-mono text-xs" />
+                    <p class="text-[10px] text-muted mt-1.5">e.g. account.created, account.suspended, account.terminated, ssl.issued</p>
                 </div>
 
-                <button type="submit" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg shadow transition">
+                <x-ui.button type="submit" variant="primary" class="w-full">
                     Subscribe Webhook
-                </button>
+                </x-ui.button>
             </form>
-        </div>
+        </x-ui.card>
 
         <!-- Deliveries Log -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm lg:col-span-2">
-            <div class="px-6 py-4 border-b border-slate-800">
-                <h3 class="text-base font-semibold text-white">Recent Webhook Deliveries</h3>
+        <x-ui.card class="p-0 overflow-hidden lg:col-span-2">
+            <div class="px-6 py-4 border-b border-border">
+                <h3 class="text-base font-semibold text-main">Recent Webhook Deliveries</h3>
             </div>
             <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-slate-800 text-left text-xs">
-                    <thead class="bg-slate-800/50 text-slate-400 uppercase font-semibold">
-                        <tr>
-                            <th class="px-4 py-3">Event</th>
-                            <th class="px-4 py-3">Endpoint URL</th>
-                            <th class="px-4 py-3">Status</th>
-                            <th class="px-4 py-3">Attempts</th>
-                            <th class="px-4 py-3">Time</th>
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr class="border-b border-border bg-shell/50 text-muted font-medium">
+                            <th class="py-3 px-6">Event</th>
+                            <th class="py-3 px-6">Endpoint URL</th>
+                            <th class="py-3 px-6">Status</th>
+                            <th class="py-3 px-6">Attempts</th>
+                            <th class="py-3 px-6">Time</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-800 text-slate-300 font-mono">
+                    <tbody class="divide-y divide-border text-main font-mono">
                         @forelse ($deliveries as $deliv)
-                            <tr class="hover:bg-slate-800/30 transition">
-                                <td class="px-4 py-3 font-semibold text-indigo-400">{{ $deliv->event }}</td>
-                                <td class="px-4 py-3 truncate max-w-xs text-slate-400">{{ $deliv->subscription->url }}</td>
-                                <td class="px-4 py-3 font-sans">
+                            <tr class="hover:bg-shell/40 transition">
+                                <td class="px-6 py-3.5 font-semibold text-primary-500">{{ $deliv->event }}</td>
+                                <td class="px-6 py-3.5 truncate max-w-xs text-muted">{{ $deliv->subscription->url }}</td>
+                                <td class="px-6 py-3.5 font-sans">
                                     @if ($deliv->delivered_at)
-                                        <span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                        <x-ui.chip variant="success" size="sm">
                                             HTTP {{ $deliv->status_code ?? 200 }}
-                                        </span>
+                                        </x-ui.chip>
                                     @else
-                                        <span class="px-2 py-0.5 rounded text-[10px] bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                                        <x-ui.chip variant="danger" size="sm">
                                             {{ $deliv->error ?? 'Failed' }}
-                                        </span>
+                                        </x-ui.chip>
                                     @endif
                                 </td>
-                                <td class="px-4 py-3 text-slate-400">{{ $deliv->attempts }}</td>
-                                <td class="px-4 py-3 text-slate-500 font-sans">{{ $deliv->created_at?->diffForHumans() }}</td>
+                                <td class="px-6 py-3.5 text-muted">{{ $deliv->attempts }}</td>
+                                <td class="px-6 py-3.5 text-muted font-sans">{{ $deliv->created_at?->diffForHumans() }}</td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="px-4 py-6 text-center text-slate-500 font-sans">No webhook deliveries recorded yet.</td>
+                                <td colspan="5" class="px-6 py-6 text-center text-muted font-sans text-xs">No webhook deliveries recorded yet.</td>
                             </tr>
                         @endforelse
                     </tbody>
                 </table>
             </div>
-        </div>
+        </x-ui.card>
     </div>
 </div>
-

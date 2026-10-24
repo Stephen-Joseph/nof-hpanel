@@ -49,11 +49,6 @@
                 <x-ui.theme-toggle size="md" />
             </div>
         </header>
-                    Test Toast
-                </button>
-                <x-ui.theme-toggle size="md" />
-            </div>
-        </header>
 
         <!-- 1. Buttons & Icon Buttons -->
         <section class="space-y-4">

@@ -1,4 +1,4 @@
-<div>
+<div wire:poll.30s>
     <!-- Header -->
     <x-layout.page-header 
         title="Resource Usage &middot; {{ $account->primary_domain }}" 

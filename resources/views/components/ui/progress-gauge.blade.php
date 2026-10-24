@@ -31,7 +31,7 @@
                 <path
                     d="M 25 105 A 75 75 0 0 1 175 105"
                     fill="none"
-                    stroke="#2563EB"
+                    stroke="var(--primary-500)"
                     stroke-width="22"
                     stroke-linecap="round"
                     stroke-dasharray="236"
@@ -43,7 +43,7 @@
                 <path
                     d="M 25 105 A 75 75 0 0 1 175 105"
                     fill="none"
-                    stroke="#1E3A8A"
+                    stroke="var(--primary-700)"
                     stroke-width="22"
                     stroke-linecap="round"
                     stroke-dasharray="236"
