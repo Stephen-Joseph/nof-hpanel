@@ -36,9 +36,9 @@
                     </div>
                 @else
                     <x-ui.select name="user_id" id="user_id" wire:model.live="user_id" required>
-                        <option value="" disabled>Select customer...</option>
+                        <option value="" disabled {{ is_null($user_id) ? 'selected' : '' }}>Select customer...</option>
                         @foreach ($customers as $user)
-                            <option value="{{ $user->id }}">
+                            <option value="{{ $user->id }}" {{ (string)$user_id === (string)$user->id ? 'selected' : '' }}>
                                 {{ $user->name }} ({{ $user->email }})
                             </option>
                         @endforeach

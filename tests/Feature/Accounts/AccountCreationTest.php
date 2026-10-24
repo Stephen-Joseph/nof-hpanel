@@ -236,8 +236,7 @@ test('customer select forwards name and wire:model attributes and validates corr
         ->and($html)->toContain('id="user_id"')
         ->and($html)->toContain('wire:model.live="user_id"')
         ->and($html)->toContain('value="' . $this->customer->id . '"')
-        ->and($html)->toContain('value="" disabled>Select customer...</option>')
-        ->and($html)->not->toContain('selected');
+        ->and($html)->toContain('value="" disabled selected>Select customer...</option>');
 
     // Submitting without user_id must assert validation error for user_id
     $component->call('save')
@@ -260,4 +259,17 @@ test('customer select forwards name and wire:model attributes and validates corr
         'linux_username' => 'acctok',
         'primary_domain' => 'acctok.example.com',
     ]);
+});
+
+test('reseller default customer is rendered as selected option', function () {
+    $reseller = User::factory()->reseller()->create();
+    $customer = User::factory()->customer()->create([
+        'parent_id' => $reseller->id,
+    ]);
+
+    $html = Livewire::actingAs($reseller)
+        ->test(AccountCreate::class)
+        ->html();
+
+    expect($html)->toContain('value="' . $customer->id . '" selected');
 });
