@@ -35,10 +35,12 @@
                         </div>
                     </div>
                 @else
-                    <x-ui.select wire:model="user_id" required>
+                    <x-ui.select name="user_id" id="user_id" wire:model.live="user_id" required>
                         <option value="" disabled {{ is_null($user_id) ? 'selected' : '' }}>Select customer...</option>
                         @foreach ($customers as $user)
-                            <option value="{{ $user->id }}">{{ $user->name }} ({{ $user->email }})</option>
+                            <option value="{{ $user->id }}" {{ (string)$user_id === (string)$user->id ? 'selected' : '' }}>
+                                {{ $user->name }} ({{ $user->email }})
+                            </option>
                         @endforeach
                     </x-ui.select>
                     @error('user_id') <span class="text-xs text-rose-500 block mt-1">{{ $message }}</span> @enderror
@@ -48,10 +50,12 @@
             <!-- Server selection -->
             <div>
                 <label class="block text-xs font-medium text-muted mb-1.5">Target Node / Server</label>
-                <x-ui.select wire:model="server_id" required>
-                    <option value="">Select server...</option>
+                <x-ui.select name="server_id" id="server_id" wire:model.live="server_id" required>
+                    <option value="" disabled {{ is_null($server_id) ? 'selected' : '' }}>Select server...</option>
                     @foreach ($servers as $srv)
-                        <option value="{{ $srv->id }}">{{ $srv->name }} &middot; {{ $srv->hostname }} ({{ $srv->private_ip }})</option>
+                        <option value="{{ $srv->id }}" {{ (string)$server_id === (string)$srv->id ? 'selected' : '' }}>
+                            {{ $srv->name }} &middot; {{ $srv->hostname }} ({{ $srv->private_ip }})
+                        </option>
                     @endforeach
                 </x-ui.select>
                 @error('server_id') <span class="text-xs text-rose-500 block mt-1">{{ $message }}</span> @enderror
@@ -60,10 +64,10 @@
             <!-- Package selection -->
             <div>
                 <label class="block text-xs font-medium text-muted mb-1.5">Hosting Package</label>
-                <x-ui.select wire:model="package_id" required>
-                    <option value="">Select package...</option>
+                <x-ui.select name="package_id" id="package_id" wire:model.live="package_id" required>
+                    <option value="" disabled {{ is_null($package_id) ? 'selected' : '' }}>Select package...</option>
                     @foreach ($packages as $pkg)
-                        <option value="{{ $pkg->id }}">
+                        <option value="{{ $pkg->id }}" {{ (string)$package_id === (string)$pkg->id ? 'selected' : '' }}>
                             {{ $pkg->name }} &mdash; {{ round($pkg->storage_mb / 1024, 1) }}GB Disk / {{ $pkg->bandwidth_gb }}GB Bandwidth / {{ $pkg->php_workers }} PHP Workers
                         </option>
                     @endforeach

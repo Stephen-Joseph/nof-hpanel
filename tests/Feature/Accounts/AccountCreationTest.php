@@ -223,3 +223,40 @@ test('full account creation flow creates row and flashes success message', funct
     $testComponent->assertRedirect(route('accounts.show', $account));
     $testComponent->assertSessionHas('status', "Account {$account->linux_username} successfully created and enqueued for provisioning.");
 });
+
+test('customer select forwards name and wire:model attributes and validates correctly on submit', function () {
+    Queue::fake();
+
+    $component = Livewire::actingAs($this->admin)
+        ->test(AccountCreate::class);
+
+    // Verify name="user_id" and wire:model.live="user_id" are rendered on select element
+    $html = $component->html();
+    expect($html)->toContain('name="user_id"')
+        ->and($html)->toContain('id="user_id"')
+        ->and($html)->toContain('wire:model.live="user_id"')
+        ->and($html)->toContain('value="' . $this->customer->id . '"')
+        ->and($html)->toContain('value="" disabled selected>Select customer...</option>');
+
+    // Submitting without user_id must assert validation error for user_id
+    $component->call('save')
+        ->assertHasErrors(['user_id' => 'required']);
+
+    // Submitting with valid user_id, server_id, and package_id creates account and has NO user_id error
+    $component->set('user_id', $this->customer->id)
+        ->set('server_id', $this->server->id)
+        ->set('package_id', $this->package->id)
+        ->set('linux_username', 'acctok')
+        ->set('primary_domain', 'acctok.example.com')
+        ->call('save')
+        ->assertHasNoErrors(['user_id', 'server_id', 'package_id'])
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('accounts', [
+        'user_id' => $this->customer->id,
+        'server_id' => $this->server->id,
+        'package_id' => $this->package->id,
+        'linux_username' => 'acctok',
+        'primary_domain' => 'acctok.example.com',
+    ]);
+});

@@ -14,9 +14,12 @@
         <form wire:submit="save" novalidate class="space-y-6">
             <!-- Account Selector -->
             <div>
-                <x-ui.select name="account_id" label="Target Hosting Account" wire:model.live="account_id" required>
+                <x-ui.select name="account_id" id="account_id" label="Target Hosting Account" wire:model.live="account_id" required>
+                    <option value="" disabled {{ is_null($account_id) ? 'selected' : '' }}>Select hosting account...</option>
                     @foreach ($accounts as $acc)
-                        <option value="{{ $acc->id }}">{{ $acc->primary_domain }} (User: {{ $acc->linux_username }})</option>
+                        <option value="{{ $acc->id }}" {{ (string)$account_id === (string)$acc->id ? 'selected' : '' }}>
+                            {{ $acc->primary_domain }} (User: {{ $acc->linux_username }})
+                        </option>
                     @endforeach
                 </x-ui.select>
                 @error('account_id') <span class="text-xs text-rose-500 block mt-1 ml-2">{{ $message }}</span> @enderror
