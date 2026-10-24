@@ -35,8 +35,8 @@
     <div class="sm:mx-auto sm:w-full sm:max-w-md">
         <div class="text-center">
             <a href="/" class="inline-flex items-center gap-2.5">
-                <div class="w-10 h-10 rounded-full bg-gradient-primary flex items-center justify-center text-white shadow-xs">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <div class="w-10 h-10 rounded-full bg-gradient-primary flex items-center justify-center text-white shadow-xs shrink-0" style="width: 40px; height: 40px;">
+                    <svg class="w-5 h-5" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                         <circle cx="12" cy="12" r="9" />
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4" />
                     </svg>

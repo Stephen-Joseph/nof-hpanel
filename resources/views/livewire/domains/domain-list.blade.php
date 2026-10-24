@@ -8,7 +8,7 @@
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
-                <span>+ Add Domain</span>
+                <span>Add Domain</span>
             </x-ui.button>
         </x-slot:actions>
     </x-layout.page-header>
@@ -29,29 +29,26 @@
         </div>
     @endif
 
-    <!-- Filters -->
-    <x-ui.card class="mb-6">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <!-- Filters Toolbar (Clean Modern Inline Toolbar) -->
+    <div class="mb-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div class="flex-1 max-w-md">
             <x-ui.input
                 name="search"
-                label="Search Domains"
                 wire:model.live.debounce.300ms="search"
                 placeholder="Filter by domain name..."
                 prefix-icon="search"
-            >
-                <x-slot:prefix>
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                </x-slot:prefix>
-            </x-ui.input>
+            />
+        </div>
 
-            <x-ui.select name="typeFilter" label="Filter by Type" wire:model.live="typeFilter">
+        <div class="w-full sm:w-48">
+            <x-ui.select name="typeFilter" wire:model.live="typeFilter">
                 <option value="">All Types</option>
                 <option value="primary">Primary</option>
                 <option value="addon">Addon</option>
                 <option value="subdomain">Subdomain</option>
             </x-ui.select>
         </div>
-    </x-ui.card>
+    </div>
 
     <!-- Domains Table -->
     <x-ui.table :headers="['Domain', 'Account / User', 'Type', 'Profile', 'Document Root', 'Actions']">

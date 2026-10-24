@@ -21,6 +21,8 @@
     --color-card: var(--bg-card);
     --color-border: var(--border);
     --color-text: var(--text);
+    --color-main: var(--text);
+    --color-surface: var(--bg-card);
     --color-muted: var(--text-muted);
 
     --color-primary-100: var(--primary-100);

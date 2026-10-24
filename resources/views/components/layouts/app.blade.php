@@ -23,7 +23,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 </head>
-<body class="min-h-full font-sans antialiased bg-[var(--bg-app)] text-[var(--text)] transition-colors duration-200 p-2 sm:p-4 lg:p-6" x-data="{ sidebarOpen: false }">
+<body class="min-h-screen font-sans antialiased bg-[var(--bg-shell)] text-[var(--text)] transition-colors duration-200" x-data="{ sidebarOpen: false }">
 
     <!-- Mobile Off-Canvas Sidebar Drawer -->
     <div
@@ -74,21 +74,21 @@
         </div>
     </div>
 
-    <!-- App Shell Outer Container (Rounded Frame with Margin) -->
-    <div class="max-w-[1600px] mx-auto min-h-[calc(100vh-1rem)] sm:min-h-[calc(100vh-2rem)] lg:min-h-[calc(100vh-3rem)] bg-[var(--bg-shell)] border border-[var(--border)] rounded-[28px] overflow-hidden flex shadow-xs relative">
+    <!-- Main App Layout (Full-bleed, Natural Dashboard Layout) -->
+    <div class="min-h-screen flex w-full bg-[var(--bg-shell)]">
 
         <!-- Desktop Fixed Sidebar -->
-        <aside class="hidden lg:flex w-64 flex-col border-r border-[var(--border)] bg-[var(--bg-shell)] shrink-0 overflow-y-auto">
+        <aside class="hidden lg:flex w-64 flex-col border-r border-[var(--border)] bg-[var(--bg-shell)] shrink-0 h-screen sticky top-0 overflow-y-auto">
             <x-layout.sidebar />
         </aside>
 
         <!-- Main Content Area -->
-        <div class="flex-1 flex flex-col min-w-0 bg-[var(--bg-shell)]">
+        <div class="flex-1 flex flex-col min-w-0 min-h-screen bg-[var(--bg-shell)]">
             <!-- Topbar Navigation -->
             <x-layout.topbar />
 
             <!-- Main Page Slot -->
-            <main class="flex-1 p-4 sm:p-6 lg:p-8">
+            <main class="flex-1 p-4 sm:p-6 lg:p-8 w-full max-w-7xl mx-auto">
                 {{ $slot }}
             </main>
 

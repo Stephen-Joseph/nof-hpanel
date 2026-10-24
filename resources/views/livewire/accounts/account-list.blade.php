@@ -15,8 +15,8 @@
         @endif
     </x-layout.page-header>
 
-    <!-- Filters -->
-    <x-ui.card class="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <!-- Filters Toolbar (Inline Toolbar) -->
+    <div class="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
             <label class="block text-xs font-medium text-muted mb-1.5">Search Domain / Username / User</label>
             <x-ui.input type="text" wire:model.live.debounce.300ms="search" placeholder="Filter accounts..." />
@@ -41,7 +41,7 @@
                 @endforeach
             </x-ui.select>
         </div>
-    </x-ui.card>
+    </div>
 
     <!-- Table -->
     <x-ui.card class="p-0 overflow-hidden">

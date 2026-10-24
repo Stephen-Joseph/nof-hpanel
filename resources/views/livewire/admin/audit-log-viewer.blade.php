@@ -4,11 +4,11 @@
         subtitle="Immutable trail of administrative and account state transitions."
     />
 
-    <!-- Filters -->
-    <x-ui.card class="mb-6 grid grid-cols-1 sm:grid-cols-4 gap-4">
+    <!-- Filters Toolbar (Inline Toolbar) -->
+    <div class="mb-6 grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div>
             <label class="block text-xs font-medium text-muted mb-1.5">Search Keyword / IP / User</label>
-            <x-ui.input type="text" wire:model.live.debounce.300ms="search" placeholder="Filter logs..." />
+            <x-ui.input type="text" wire:model.live.debounce.300ms="search" placeholder="Filter logs..." prefix-icon="search" />
         </div>
 
         <div>
@@ -25,7 +25,7 @@
             <label class="block text-xs font-medium text-muted mb-1.5">Date To</label>
             <x-ui.input type="date" wire:model.live="dateTo" />
         </div>
-    </x-ui.card>
+    </div>
 
     <!-- Table -->
     <x-ui.card class="p-0 overflow-hidden">
