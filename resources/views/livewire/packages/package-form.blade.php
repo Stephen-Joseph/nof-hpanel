@@ -13,7 +13,7 @@
         </x-slot:actions>
     </x-layout.page-header>
 
-    <form wire:submit="save" class="space-y-6">
+    <form wire:submit="save" novalidate class="space-y-6">
         <!-- Basic Info -->
         <x-ui.card>
             <h3 class="text-base font-semibold text-main mb-4 border-b border-border pb-3">General Configuration</h3>

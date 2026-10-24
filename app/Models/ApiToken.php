@@ -17,6 +17,7 @@ use Illuminate\Support\Str;
  * @property array<int, string>|null $ip_allowlist
  * @property Carbon|null $last_used_at
  * @property Carbon|null $expires_at
+ * @property string|null $prefix
  * @property Carbon|null $revoked_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -26,6 +27,7 @@ use Illuminate\Support\Str;
     'user_id',
     'name',
     'token_hash',
+    'prefix',
     'scopes',
     'ip_allowlist',
     'last_used_at',
@@ -74,11 +76,13 @@ class ApiToken extends Model
     ): array {
         $plainTextToken = 'hp_'.Str::random(40);
         $tokenHash = hash('sha256', $plainTextToken);
+        $prefix = Str::substr($plainTextToken, 0, 8);
 
         $token = self::create([
             'user_id' => $user->id,
             'name' => $name,
             'token_hash' => $tokenHash,
+            'prefix' => $prefix,
             'scopes' => $scopes,
             'ip_allowlist' => $ipAllowlist,
             'expires_at' => $expiresAt,
@@ -86,6 +90,29 @@ class ApiToken extends Model
 
         return [
             'token' => $token,
+            'plainTextToken' => $plainTextToken,
+        ];
+    }
+
+    /**
+     * Rotate this token and return the new plaintext secret.
+     *
+     * @return array{token: ApiToken, plainTextToken: string}
+     */
+    public function rotate(): array
+    {
+        $plainTextToken = 'hp_'.Str::random(40);
+        $tokenHash = hash('sha256', $plainTextToken);
+        $prefix = Str::substr($plainTextToken, 0, 8);
+
+        $this->update([
+            'token_hash' => $tokenHash,
+            'prefix' => $prefix,
+            'revoked_at' => null,
+        ]);
+
+        return [
+            'token' => $this,
             'plainTextToken' => $plainTextToken,
         ];
     }

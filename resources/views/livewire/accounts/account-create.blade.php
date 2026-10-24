@@ -13,7 +13,7 @@
         </x-slot:actions>
     </x-layout.page-header>
 
-    <form wire:submit="save" class="space-y-6">
+    <form wire:submit="save" novalidate class="space-y-6">
         <x-ui.card class="space-y-4">
             <h3 class="text-base font-semibold text-main border-b border-border pb-3">Account Owner &amp; Environment</h3>
 

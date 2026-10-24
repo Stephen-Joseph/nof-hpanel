@@ -125,6 +125,72 @@
                     </svg>
                 </x-layout.nav-item>
             @endif
+
+            <!-- API Integration -->
+            <div x-data="{ open: @js(request()->routeIs('api.integration.*')) }">
+                <button
+                    type="button"
+                    @click="open = !open"
+                    class="w-full relative flex items-center justify-between px-3.5 py-2.5 rounded-full text-sm font-medium transition-colors duration-150 select-none cursor-pointer {{ request()->routeIs('api.integration.*') ? 'bg-blue-50 dark:bg-blue-500/10 text-primary-600 dark:text-primary-400 font-semibold before:absolute before:left-0 before:top-2 before:bottom-2 before:w-1 before:bg-blue-600 before:rounded-r-md' : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg-card)]/80' }}"
+                >
+                    <span class="flex items-center gap-3">
+                        <span class="shrink-0 {{ request()->routeIs('api.integration.*') ? 'text-blue-600 dark:text-blue-400' : 'text-[var(--text-muted)]' }}">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                            </svg>
+                        </span>
+                        <span class="truncate">API Integration</span>
+                    </span>
+                    <svg 
+                        class="w-3.5 h-3.5 transition-transform duration-150 text-[var(--text-muted)]" 
+                        :class="open ? 'rotate-180' : ''" 
+                        fill="none" 
+                        viewBox="0 0 24 24" 
+                        stroke="currentColor" 
+                        stroke-width="2"
+                    >
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+
+                <div x-show="open" x-cloak class="pl-8 pr-2 pt-1 pb-1 space-y-1">
+                    <a
+                        href="{{ route('api.integration.overview') }}"
+                        wire:navigate
+                        class="block px-3 py-1.5 rounded-xl text-xs font-medium transition-colors {{ request()->routeIs('api.integration.overview') ? 'text-blue-600 dark:text-blue-400 font-semibold bg-[var(--bg-shell)]' : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg-card)]/50' }}"
+                    >
+                        Overview
+                    </a>
+                    <a
+                        href="{{ route('api.integration.tokens') }}"
+                        wire:navigate
+                        class="block px-3 py-1.5 rounded-xl text-xs font-medium transition-colors {{ request()->routeIs('api.integration.tokens*') ? 'text-blue-600 dark:text-blue-400 font-semibold bg-[var(--bg-shell)]' : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg-card)]/50' }}"
+                    >
+                        Tokens
+                    </a>
+                    <a
+                        href="{{ route('api.integration.webhooks') }}"
+                        wire:navigate
+                        class="block px-3 py-1.5 rounded-xl text-xs font-medium transition-colors {{ request()->routeIs('api.integration.webhooks*') ? 'text-blue-600 dark:text-blue-400 font-semibold bg-[var(--bg-shell)]' : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg-card)]/50' }}"
+                    >
+                        Webhooks
+                    </a>
+                    <a
+                        href="{{ route('api.integration.logs') }}"
+                        wire:navigate
+                        class="block px-3 py-1.5 rounded-xl text-xs font-medium transition-colors {{ request()->routeIs('api.integration.logs*') ? 'text-blue-600 dark:text-blue-400 font-semibold bg-[var(--bg-shell)]' : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg-card)]/50' }}"
+                    >
+                        Logs
+                    </a>
+                    <a
+                        href="{{ route('api.integration.docs') }}"
+                        wire:navigate
+                        class="block px-3 py-1.5 rounded-xl text-xs font-medium transition-colors {{ request()->routeIs('api.integration.docs*') ? 'text-blue-600 dark:text-blue-400 font-semibold bg-[var(--bg-shell)]' : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg-card)]/50' }}"
+                    >
+                        Docs
+                    </a>
+                </div>
+            </div>
         </nav>
 
         <!-- Section 2: GENERAL -->
@@ -142,7 +208,7 @@
             </x-layout.nav-item>
 
             <!-- Help / Docs -->
-            <x-layout.nav-item href="#" :active="false">
+            <x-layout.nav-item :href="route('api.integration.docs')" :active="request()->routeIs('api.integration.docs*')">
                 <x-slot:label>Help &amp; Docs</x-slot:label>
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

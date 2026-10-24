@@ -195,6 +195,18 @@ Route::middleware('auth')->group(function () {
     Route::get('/domains/{domain}/php', function (Domain $domain) {
         return view('domains.php', ['domain' => $domain]);
     })->middleware('can:view,domain')->name('domains.php');
+
+    // API Integration
+    Route::prefix('api-integration')->name('api.integration.')->middleware('verified')->group(function () {
+        Route::get('/', App\Livewire\ApiIntegration\ApiOverview::class)->name('overview');
+        Route::get('/tokens', App\Livewire\ApiIntegration\TokenManager::class)->name('tokens');
+        Route::get('/tokens/create', App\Livewire\ApiIntegration\TokenCreate::class)->name('tokens.create');
+        Route::get('/webhooks', App\Livewire\ApiIntegration\WebhookManager::class)->name('webhooks');
+        Route::get('/logs', App\Livewire\ApiIntegration\RequestLogViewer::class)->name('logs');
+        Route::get('/docs', function () {
+            return view('api-integration.docs');
+        })->name('docs');
+    });
 });
 
 // UI Kit Demo Route (local & testing environments only)

@@ -12,3 +12,4 @@ Schedule::command('ssl:renew-expiring')->daily();
 Schedule::command('usage:collect')->everyFifteenMinutes();
 Schedule::command('bandwidth:reset')->monthlyOn(1, '00:00');
 Schedule::command('backups:run-scheduled')->everyMinute();
+Schedule::command('api:prune-logs')->daily();

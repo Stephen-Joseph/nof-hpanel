@@ -15,6 +15,12 @@
         @endif
     </x-layout.page-header>
 
+    @if (session('status'))
+        <div class="mb-6 p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-sm flex items-center justify-between">
+            <span>{{ session('status') }}</span>
+        </div>
+    @endif
+
     <!-- Filters Toolbar (Inline Toolbar) -->
     <div class="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>

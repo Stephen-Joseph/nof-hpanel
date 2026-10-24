@@ -11,7 +11,7 @@
     </x-layout.page-header>
 
     <x-ui.card>
-        <form wire:submit="save" class="space-y-6">
+        <form wire:submit="save" novalidate class="space-y-6">
             <!-- Account Selector -->
             <div>
                 <x-ui.select name="account_id" label="Target Hosting Account" wire:model.live="account_id" required>
