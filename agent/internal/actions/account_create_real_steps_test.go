@@ -19,9 +19,11 @@ type fakeCommandExecutor struct {
 	runErrors      map[string]error
 	combinedResult map[string]fakeCommandResult
 	lookups        map[string]bool
+	commands       []string
 }
 
 func (f *fakeCommandExecutor) Run(_ context.Context, name string, args ...string) error {
+	f.commands = append(f.commands, f.key(name, args...))
 	if err, ok := f.runErrors[f.key(name, args...)]; ok {
 		return err
 	}
@@ -436,5 +438,155 @@ func TestAccountCreateExecuteFailsOnOtherSetquotaErrors(t *testing.T) {
 				t.Fatal("expected pool file to NOT exist when quota fails")
 			}
 		})
+	}
+}
+
+func TestAccountCreateDirectoryAndFilePermissionsAndOwnership(t *testing.T) {
+	exec := &fakeCommandExecutor{
+		runErrors: map[string]error{
+			"id -u cust01": nil, // user exists
+		},
+		combinedResult: map[string]fakeCommandResult{},
+		lookups: map[string]bool{
+			"setquota":   true,
+			"php-fpm8.4": true,
+		},
+	}
+	action := newTestAction(t, exec)
+	homeDir := filepath.Join(action.homeBaseDir, "cust01")
+
+	// Pre-create homeDir with non-standard permissions (0700)
+	if err := os.MkdirAll(homeDir, 0700); err != nil {
+		t.Fatalf("failed creating homeDir: %v", err)
+	}
+	_ = os.Chmod(homeDir, 0700)
+
+	// Pre-create public_html with a subdirectory and file having restricted permissions (0700, 0600)
+	subDir := filepath.Join(homeDir, "public_html", "assets", "css")
+	if err := os.MkdirAll(subDir, 0700); err != nil {
+		t.Fatalf("failed creating subDir: %v", err)
+	}
+	_ = os.Chmod(filepath.Dir(subDir), 0700)
+	_ = os.Chmod(subDir, 0700)
+
+	subFile := filepath.Join(subDir, "style.css")
+	if err := os.WriteFile(subFile, []byte("body { color: #333; }"), 0600); err != nil {
+		t.Fatalf("failed writing subFile: %v", err)
+	}
+	_ = os.Chmod(subFile, 0600)
+
+	// Pre-create logs directory with non-standard permissions (0777)
+	logsDir := filepath.Join(homeDir, "logs")
+	if err := os.MkdirAll(logsDir, 0777); err != nil {
+		t.Fatalf("failed creating logsDir: %v", err)
+	}
+	_ = os.Chmod(logsDir, 0777)
+
+	// Execute account.create
+	res, err := action.Execute(context.Background(), testPayload(), false)
+	if err != nil {
+		t.Fatalf("expected execute success, got error: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected res.Success=true, got error: %q", res.Error)
+	}
+
+	// 1. Assert home directory mode is 0711
+	fi, err := os.Stat(homeDir)
+	if err != nil {
+		t.Fatalf("stat homeDir failed: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0711 {
+		t.Errorf("expected homeDir mode 0711, got %04o", perm)
+	}
+
+	// 2. Assert public_html mode is 0755
+	publicHtml := filepath.Join(homeDir, "public_html")
+	fi, err = os.Stat(publicHtml)
+	if err != nil {
+		t.Fatalf("stat publicHtml failed: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0755 {
+		t.Errorf("expected public_html mode 0755, got %04o", perm)
+	}
+
+	// 3. Assert subdirectories inside public_html are 0755
+	assetsDir := filepath.Join(publicHtml, "assets")
+	fi, err = os.Stat(assetsDir)
+	if err != nil {
+		t.Fatalf("stat assetsDir failed: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0755 {
+		t.Errorf("expected public_html/assets mode 0755, got %04o", perm)
+	}
+
+	fi, err = os.Stat(subDir)
+	if err != nil {
+		t.Fatalf("stat subDir failed: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0755 {
+		t.Errorf("expected public_html/assets/css mode 0755, got %04o", perm)
+	}
+
+	// 4. Assert files inside public_html (default index.html and subFile) are 0644
+	indexHtml := filepath.Join(publicHtml, "index.html")
+	fi, err = os.Stat(indexHtml)
+	if err != nil {
+		t.Fatalf("stat indexHtml failed: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0644 {
+		t.Errorf("expected index.html mode 0644, got %04o", perm)
+	}
+
+	fi, err = os.Stat(subFile)
+	if err != nil {
+		t.Fatalf("stat subFile failed: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0644 {
+		t.Errorf("expected style.css mode 0644, got %04o", perm)
+	}
+
+	// 5. Assert logs is 0750
+	fi, err = os.Stat(logsDir)
+	if err != nil {
+		t.Fatalf("stat logsDir failed: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0750 {
+		t.Errorf("expected logs mode 0750, got %04o", perm)
+	}
+
+	// 6. Assert tmp is 0750
+	tmpDir := filepath.Join(homeDir, "tmp")
+	fi, err = os.Stat(tmpDir)
+	if err != nil {
+		t.Fatalf("stat tmpDir failed: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0750 {
+		t.Errorf("expected tmp mode 0750, got %04o", perm)
+	}
+
+	// 7. Assert chown was called for account_user:account_user on each path
+	expectedChowns := []string{
+		"chown cust01:cust01 " + homeDir,
+		"chown cust01:cust01 " + publicHtml,
+		"chown cust01:cust01 " + assetsDir,
+		"chown cust01:cust01 " + subDir,
+		"chown cust01:cust01 " + indexHtml,
+		"chown cust01:cust01 " + subFile,
+		"chown cust01:cust01 " + logsDir,
+		"chown cust01:cust01 " + tmpDir,
+	}
+
+	for _, expected := range expectedChowns {
+		found := false
+		for _, cmd := range exec.commands {
+			if cmd == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected command %q was not executed. Recorded commands:\n%s", expected, strings.Join(exec.commands, "\n"))
+		}
 	}
 }

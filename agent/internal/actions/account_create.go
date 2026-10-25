@@ -254,12 +254,12 @@ func (a *AccountCreateAction) Execute(ctx context.Context, payload []byte, dryRu
 	}
 	logs = append(logs, fmt.Sprintf("user '%s' is present", p.Username))
 
-	if err := a.ensureDirectories(homeDir); err != nil {
+	if err := a.ensureDirectories(ctx, p.Username, homeDir); err != nil {
 		return a.stepFailure("directories", err, logs)
 	}
 	logs = append(logs, "verified home directory layout")
 
-	if err := a.ensureDefaultIndex(homeDir, p.PrimaryDomain); err != nil {
+	if err := a.ensureDefaultIndex(ctx, p.Username, homeDir, p.PrimaryDomain); err != nil {
 		return a.stepFailure("directories", err, logs)
 	}
 
@@ -351,25 +351,94 @@ func (a *AccountCreateAction) ensureUser(ctx context.Context, username, homeDir 
 	return nil
 }
 
-func (a *AccountCreateAction) ensureDirectories(homeDir string) error {
-	subdirs := []string{"public_html", "logs", "tmp", "backups", ".ssh"}
+func (a *AccountCreateAction) ensureDirectories(ctx context.Context, username, homeDir string) error {
+	// 1. Ensure home directory exists, set to 0711, and owned by username:username
+	if err := os.MkdirAll(homeDir, 0711); err != nil {
+		return fmt.Errorf("creating home directory %s: %w", homeDir, err)
+	}
+	if err := os.Chmod(homeDir, 0711); err != nil {
+		return fmt.Errorf("chmod home directory %s: %w", homeDir, err)
+	}
+	if err := a.executor.Run(ctx, "chown", fmt.Sprintf("%s:%s", username, username), homeDir); err != nil {
+		return fmt.Errorf("chown home directory %s: %w", homeDir, err)
+	}
+
+	// 2. Subdirectories:
+	// public_html: 0755
+	// logs: 0750
+	// tmp: 0750
+	// backups: 0700
+	// .ssh: 0700
+	subdirs := []struct {
+		name string
+		perm os.FileMode
+	}{
+		{"public_html", 0755},
+		{"logs", 0750},
+		{"tmp", 0750},
+		{"backups", 0700},
+		{".ssh", 0700},
+	}
+
 	for _, sub := range subdirs {
-		dirPath := filepath.Join(homeDir, sub)
-		perm := os.FileMode(0700)
-		if sub == "public_html" || sub == "logs" {
-			perm = 0750
-		}
-		if err := os.MkdirAll(dirPath, perm); err != nil {
+		dirPath := filepath.Join(homeDir, sub.name)
+		if err := os.MkdirAll(dirPath, sub.perm); err != nil {
 			return fmt.Errorf("creating %s: %w", dirPath, err)
 		}
+		if err := os.Chmod(dirPath, sub.perm); err != nil {
+			return fmt.Errorf("chmod %s: %w", dirPath, err)
+		}
+		if err := a.executor.Run(ctx, "chown", fmt.Sprintf("%s:%s", username, username), dirPath); err != nil {
+			return fmt.Errorf("chown %s: %w", dirPath, err)
+		}
+	}
+
+	// 3. Ensure any existing subdirectories and files in public_html have correct permissions and ownership
+	publicHtml := filepath.Join(homeDir, "public_html")
+	if err := a.enforcePublicHtmlPermissions(ctx, username, publicHtml); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func (a *AccountCreateAction) ensureDefaultIndex(homeDir, domain string) error {
+func (a *AccountCreateAction) enforcePublicHtmlPermissions(ctx context.Context, username, publicHtml string) error {
+	return filepath.Walk(publicHtml, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == publicHtml {
+			return nil
+		}
+		// Security: do not follow or chmod symlink targets outside public_html
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+		if info.IsDir() {
+			if err := os.Chmod(path, 0755); err != nil {
+				return fmt.Errorf("chmod %s: %w", path, err)
+			}
+		} else {
+			if err := os.Chmod(path, 0644); err != nil {
+				return fmt.Errorf("chmod %s: %w", path, err)
+			}
+		}
+		if err := a.executor.Run(ctx, "chown", fmt.Sprintf("%s:%s", username, username), path); err != nil {
+			return fmt.Errorf("chown %s: %w", path, err)
+		}
+		return nil
+	})
+}
+
+func (a *AccountCreateAction) ensureDefaultIndex(ctx context.Context, username, homeDir, domain string) error {
 	indexPath := filepath.Join(homeDir, "public_html", "index.html")
 	if _, err := os.Stat(indexPath); err == nil {
+		if err := os.Chmod(indexPath, 0644); err != nil {
+			return fmt.Errorf("chmod %s: %w", indexPath, err)
+		}
+		if err := a.executor.Run(ctx, "chown", fmt.Sprintf("%s:%s", username, username), indexPath); err != nil {
+			return fmt.Errorf("chown %s: %w", indexPath, err)
+		}
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("checking %s: %w", indexPath, err)
@@ -378,6 +447,12 @@ func (a *AccountCreateAction) ensureDefaultIndex(homeDir, domain string) error {
 	indexContent := fmt.Sprintf("<!DOCTYPE html><html><head><title>Welcome to %s</title></head><body><h1>Welcome to %s</h1><p>Website is successfully provisioned.</p></body></html>", domain, domain)
 	if err := os.WriteFile(indexPath, []byte(indexContent), 0644); err != nil {
 		return fmt.Errorf("writing %s: %w", indexPath, err)
+	}
+	if err := os.Chmod(indexPath, 0644); err != nil {
+		return fmt.Errorf("chmod %s: %w", indexPath, err)
+	}
+	if err := a.executor.Run(ctx, "chown", fmt.Sprintf("%s:%s", username, username), indexPath); err != nil {
+		return fmt.Errorf("chown %s: %w", indexPath, err)
 	}
 
 	return nil
