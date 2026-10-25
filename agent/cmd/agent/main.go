@@ -97,6 +97,7 @@ func main() {
 	registry.Register(actions.NewFileDeleteAction())
 	registry.Register(actions.NewFileRenameAction())
 	registry.Register(actions.NewFileChmodAction())
+	registry.Register(actions.NewFileUploadAction())
 	registry.Register(actions.NewFileArchiveAction())
 	registry.Register(actions.NewFileExtractAction())
 

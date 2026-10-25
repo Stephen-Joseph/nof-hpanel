@@ -40,6 +40,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | File Manager Configuration
+    |--------------------------------------------------------------------------
+    */
+    'file_manager' => [
+        'max_upload_size_mb' => (int) env('HPANEL_FILE_UPLOAD_MAX_MB', 100),
+        'allowed_extensions' => [
+            'zip', 'tar.gz', 'tgz', 'gz', 'tar',
+            'txt', 'md', 'html', 'htm', 'css', 'js', 'json', 'xml', 'svg',
+            'php', 'phtml', 'sql', 'env', 'htaccess', 'htpasswd', 'ini', 'conf', 'yaml', 'yml',
+            'jpg', 'jpeg', 'png', 'gif', 'webp', 'ico', 'pdf', 'csv', 'tsv',
+            'woff', 'woff2', 'ttf', 'eot', 'mp4', 'webm', 'mp3', 'wav',
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Rate Limiting Policies
     |--------------------------------------------------------------------------
     */

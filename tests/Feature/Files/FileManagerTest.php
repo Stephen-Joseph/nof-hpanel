@@ -1,12 +1,16 @@
 <?php
 
+use App\Enums\AgentJobStatus;
 use App\Enums\ServerStatus;
 use App\Livewire\Files\FileManager;
 use App\Models\Account;
+use App\Models\AgentJob;
 use App\Models\Package;
 use App\Models\Server;
 use App\Models\User;
 use App\Services\AgentClient;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -204,4 +208,225 @@ test('renaming, deleting, and changing permissions', function () {
         ->assertSee('Permissions updated.')
         ->call('deleteItem', '/home/alicecorp/temp.txt')
         ->assertSee('Item deleted.');
+});
+
+test('upload rejects disallowed file extension', function () {
+    Storage::fake('local');
+    $mockClient = Mockery::mock(AgentClient::class);
+    $mockClient->shouldReceive('execute')
+        ->withArgs(fn ($s, $a, $p) => $a === 'file.list')
+        ->andReturn(['success' => true, 'data' => ['entries' => []], 'logs' => []]);
+
+    app()->instance(AgentClient::class, $mockClient);
+
+    $badFile = UploadedFile::fake()->create('malware.exe', 10, 'application/x-msdownload');
+
+    Livewire::actingAs($this->customer1)
+        ->test(FileManager::class, ['account' => $this->account1])
+        ->set('uploads', [$badFile])
+        ->call('uploadFiles')
+        ->assertHasErrors(['uploads']);
+
+    expect(AgentJob::where('action', 'file.upload')->count())->toBe(0);
+});
+
+test('upload rejects oversized file exceeding max upload size', function () {
+    Storage::fake('local');
+    $mockClient = Mockery::mock(AgentClient::class);
+    $mockClient->shouldReceive('execute')
+        ->withArgs(fn ($s, $a, $p) => $a === 'file.list')
+        ->andReturn(['success' => true, 'data' => ['entries' => []], 'logs' => []]);
+
+    app()->instance(AgentClient::class, $mockClient);
+
+    // Set limit to 1 MB and upload a 2 MB file
+    config()->set('hpanel.file_manager.max_upload_size_mb', 1);
+    $hugeFile = UploadedFile::fake()->createWithContent('huge.zip', str_repeat('A', 1024 * 1024 * 2));
+
+    Livewire::actingAs($this->customer1)
+        ->test(FileManager::class, ['account' => $this->account1])
+        ->set('uploads', [$hugeFile])
+        ->call('uploadFiles')
+        ->assertHasErrors(['uploads.0']);
+
+    expect(AgentJob::where('action', 'file.upload')->count())->toBe(0);
+});
+
+test('valid file upload creates agent job and executes file.upload', function () {
+    Storage::fake('local');
+    $mockClient = Mockery::mock(AgentClient::class);
+    $mockClient->shouldReceive('execute')
+        ->withArgs(fn ($s, $a, $p) => $a === 'file.list')
+        ->andReturn(['success' => true, 'data' => ['entries' => []], 'logs' => []]);
+
+    $mockClient->shouldReceive('execute')
+        ->once()
+        ->withArgs(function ($server, $action, $payload) {
+            return $action === 'file.upload'
+                && $payload['username'] === 'alicecorp'
+                && $payload['target_path'] === 'public_html'
+                && $payload['filename'] === 'archive.zip'
+                && ! empty($payload['content_base64']);
+        })
+        ->andReturn([
+            'success' => true,
+            'data' => ['filename' => 'archive.zip', 'bytes_written' => 256],
+            'logs' => ['upload chunk written successfully'],
+        ]);
+
+    app()->instance(AgentClient::class, $mockClient);
+
+    $file = UploadedFile::fake()->createWithContent('archive.zip', 'dummy-zip-data-content-for-test');
+
+    Livewire::actingAs($this->customer1)
+        ->test(FileManager::class, ['account' => $this->account1])
+        ->set('uploadTargetFolder', 'public_html')
+        ->set('uploads', [$file])
+        ->call('uploadFiles')
+        ->assertHasNoErrors()
+        ->assertSee('1 file(s) uploaded successfully.');
+
+    $job = AgentJob::where('action', 'file.upload')->first();
+    expect($job)->not->toBeNull()
+        ->and($job->status)->toBe(AgentJobStatus::COMPLETED)
+        ->and($job->account_id)->toBe($this->account1->id);
+});
+
+test('extract here and extract to folder create agent job and execute file.extract', function () {
+    $mockClient = Mockery::mock(AgentClient::class);
+    $mockClient->shouldReceive('execute')
+        ->withArgs(fn ($s, $a, $p) => $a === 'file.list')
+        ->andReturn(['success' => true, 'data' => ['entries' => []], 'logs' => []]);
+
+    // Extract here call
+    $mockClient->shouldReceive('execute')
+        ->once()
+        ->withArgs(function ($server, $action, $payload) {
+            return $action === 'file.extract'
+                && $payload['username'] === 'alicecorp'
+                && $payload['archive_path'] === '/home/alicecorp/site.tar.gz'
+                && $payload['destination_dir'] === '/home/alicecorp';
+        })
+        ->andReturn([
+            'success' => true,
+            'data' => ['extracted' => true],
+            'logs' => ['extracted tar.gz successfully'],
+        ]);
+
+    // Extract to folder call
+    $mockClient->shouldReceive('execute')
+        ->once()
+        ->withArgs(function ($server, $action, $payload) {
+            return $action === 'file.extract'
+                && $payload['username'] === 'alicecorp'
+                && $payload['archive_path'] === '/home/alicecorp/backup.zip'
+                && $payload['destination_dir'] === 'public_html/unpacked';
+        })
+        ->andReturn([
+            'success' => true,
+            'data' => ['extracted' => true],
+            'logs' => ['extracted zip successfully'],
+        ]);
+
+    app()->instance(AgentClient::class, $mockClient);
+
+    $test = Livewire::actingAs($this->customer1)
+        ->test(FileManager::class, ['account' => $this->account1]);
+
+    // Test Extract Here
+    $test->call('extractHere', '/home/alicecorp/site.tar.gz')
+        ->assertSee('Archive extracted successfully.');
+
+    expect(AgentJob::where('action', 'file.extract')->count())->toBe(1);
+
+    // Test Extract to folder
+    $test->call('openExtractModal', '/home/alicecorp/backup.zip')
+        ->set('extractDestinationDir', 'public_html/unpacked')
+        ->call('extractToFolder')
+        ->assertHasNoErrors()
+        ->assertSee('Archive extracted successfully.');
+
+    expect(AgentJob::where('action', 'file.extract')->count())->toBe(2);
+});
+
+test('archive creates agent job and executes file.archive', function () {
+    $mockClient = Mockery::mock(AgentClient::class);
+    $mockClient->shouldReceive('execute')
+        ->withArgs(fn ($s, $a, $p) => $a === 'file.list')
+        ->andReturn(['success' => true, 'data' => ['entries' => []], 'logs' => []]);
+
+    $mockClient->shouldReceive('execute')
+        ->once()
+        ->withArgs(function ($server, $action, $payload) {
+            return $action === 'file.archive'
+                && $payload['username'] === 'alicecorp'
+                && $payload['sources'] === ['public_html/index.php', 'public_html/style.css']
+                && $payload['destination_zip'] === 'site-backup.zip';
+        })
+        ->andReturn([
+            'success' => true,
+            'data' => ['compressed' => true],
+            'logs' => ['archive created successfully'],
+        ]);
+
+    app()->instance(AgentClient::class, $mockClient);
+
+    Livewire::actingAs($this->customer1)
+        ->test(FileManager::class, ['account' => $this->account1])
+        ->set('selectedItems', ['public_html/index.php', 'public_html/style.css'])
+        ->call('openArchiveModal')
+        ->set('archiveDestinationName', 'site-backup.zip')
+        ->call('createArchive')
+        ->assertHasNoErrors()
+        ->assertSee("Archive 'site-backup.zip' created successfully.");
+
+    $job = AgentJob::where('action', 'file.archive')->first();
+    expect($job)->not->toBeNull()
+        ->and($job->status)->toBe(AgentJobStatus::COMPLETED)
+        ->and($job->account_id)->toBe($this->account1->id);
+});
+
+test('authorization: account owner, parent reseller, and admin can manage files, unrelated customer is forbidden', function () {
+    $mockClient = Mockery::mock(AgentClient::class);
+    $mockClient->shouldReceive('execute')
+        ->withArgs(fn ($s, $a, $p) => $a === 'file.list')
+        ->andReturn(['success' => true, 'data' => ['entries' => []], 'logs' => []]);
+    $mockClient->shouldReceive('execute')
+        ->withArgs(fn ($s, $a, $p) => $a === 'file.extract')
+        ->andReturn(['success' => true, 'data' => ['extracted' => true], 'logs' => []]);
+
+    app()->instance(AgentClient::class, $mockClient);
+
+    // 1. Account Owner
+    Livewire::actingAs($this->customer1)
+        ->test(FileManager::class, ['account' => $this->account1])
+        ->call('extractHere', '/home/alicecorp/test.zip')
+        ->assertStatus(200);
+
+    // 2. Admin
+    $admin = User::factory()->admin()->create();
+    Livewire::actingAs($admin)
+        ->test(FileManager::class, ['account' => $this->account1])
+        ->call('extractHere', '/home/alicecorp/test.zip')
+        ->assertStatus(200);
+
+    // 3. Parent Reseller
+    $reseller = User::factory()->reseller()->create();
+    $childCustomer = User::factory()->customer()->create(['parent_id' => $reseller->id]);
+    $resellerAccount = Account::factory()->create([
+        'user_id' => $childCustomer->id,
+        'server_id' => $this->server->id,
+        'package_id' => $this->package->id,
+        'linux_username' => 'childuser',
+    ]);
+
+    Livewire::actingAs($reseller)
+        ->test(FileManager::class, ['account' => $resellerAccount])
+        ->call('extractHere', '/home/childuser/test.zip')
+        ->assertStatus(200);
+
+    // 4. Unrelated Customer is forbidden
+    Livewire::actingAs($this->customer2)
+        ->test(FileManager::class, ['account' => $this->account1])
+        ->assertForbidden();
 });

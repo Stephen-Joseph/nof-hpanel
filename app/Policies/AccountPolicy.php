@@ -32,6 +32,22 @@ class AccountPolicy
     }
 
     /**
+     * Determine whether the user can manage files (upload, extract, archive) for the account.
+     */
+    public function manageFiles(User $auth, Account $account): bool
+    {
+        if ($auth->isAdmin()) {
+            return true;
+        }
+
+        if ($auth->isReseller()) {
+            return $account->user_id === $auth->id || $account->user->isDescendantOf($auth);
+        }
+
+        return $account->user_id === $auth->id;
+    }
+
+    /**
      * Determine whether the user can create accounts.
      */
     public function create(User $auth): bool
