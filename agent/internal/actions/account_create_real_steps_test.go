@@ -250,3 +250,167 @@ func TestAccountCreateExecuteReturnsStepErrorOnSystemdSliceFailure(t *testing.T)
 		t.Fatalf("unexpected error message: %s", res.Error)
 	}
 }
+
+func TestAccountCreateExecuteSkipsQuotaWhenUnsupported(t *testing.T) {
+	testCases := []struct {
+		name string
+		out  []byte
+		err  error
+	}{
+		{
+			name: "quota not enabled",
+			out:  []byte("setquota: quota not enabled on filesystem /"),
+			err:  errors.New("exit status 1"),
+		},
+		{
+			name: "Cannot find filesystem",
+			out:  []byte("setquota: Cannot find filesystem to grant quota for [/dev/sda1]"),
+			err:  errors.New("exit status 1"),
+		},
+		{
+			name: "not supported",
+			out:  []byte("setquota: filesystem does not support quotas (not supported)"),
+			err:  errors.New("exit status 1"),
+		},
+		{
+			name: "quotactl in output",
+			out:  []byte("setquota: quotactl on /dev/root [/]: Function not implemented"),
+			err:  errors.New("exit status 1"),
+		},
+		{
+			name: "quotactl in err",
+			out:  []byte{},
+			err:  errors.New("quotactl syscall failed: operation not supported"),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			exec := &fakeCommandExecutor{
+				runErrors: map[string]error{
+					"id -u cust01": nil,
+				},
+				combinedResult: map[string]fakeCommandResult{
+					"setquota -u cust01 10485760 10485760 100000 100000 /": {
+						out: tc.out,
+						err: tc.err,
+					},
+				},
+				lookups: map[string]bool{
+					"setquota":   true,
+					"php-fpm8.4": true,
+				},
+			}
+			action := newTestAction(t, exec)
+
+			res, err := action.Execute(context.Background(), testPayload(), false)
+			if err != nil {
+				t.Fatalf("expected action to continue and succeed, got error: %v", err)
+			}
+			if !res.Success {
+				t.Fatalf("expected res.Success=true, got error: %s", res.Error)
+			}
+
+			// Verify warning was logged
+			hasWarning := false
+			hasSkippedStep := false
+			for _, l := range res.Logs {
+				if strings.Contains(l, "warning: quota unsupported on this filesystem") {
+					hasWarning = true
+				}
+				if strings.Contains(l, "step 'quota' skipped with reason: quota unsupported on this filesystem") {
+					hasSkippedStep = true
+				}
+			}
+			if !hasWarning {
+				t.Errorf("expected warning log in res.Logs: %v", res.Logs)
+			}
+			if !hasSkippedStep {
+				t.Errorf("expected skipped step log in res.Logs: %v", res.Logs)
+			}
+
+			if skipped, ok := res.Data["quota_skipped"].(bool); !ok || !skipped {
+				t.Errorf("expected res.Data[quota_skipped] to be true, got %v", res.Data["quota_skipped"])
+			}
+			if reason, ok := res.Data["quota_skipped_reason"].(string); !ok || reason != "quota unsupported on this filesystem" {
+				t.Errorf("expected res.Data[quota_skipped_reason] to be 'quota unsupported on this filesystem', got %v", res.Data["quota_skipped_reason"])
+			}
+
+			// Verify subsequent steps were executed
+			homeDir := filepath.Join(action.homeBaseDir, "cust01")
+			if _, err := os.Stat(filepath.Join(homeDir, "public_html", "index.html")); err != nil {
+				t.Fatalf("expected default index file to exist: %v", err)
+			}
+			poolFile := filepath.Join(action.phpConfigBaseDir, "8.4", "fpm", "pool.d", "cust01.conf")
+			if _, err := os.Stat(poolFile); err != nil {
+				t.Fatalf("expected pool file to exist: %v", err)
+			}
+			vhostFile := filepath.Join(action.vhostAvailableDir, "cust01.example.com.conf")
+			if _, err := os.Stat(vhostFile); err != nil {
+				t.Fatalf("expected vhost file to exist: %v", err)
+			}
+		})
+	}
+}
+
+func TestAccountCreateExecuteFailsOnOtherSetquotaErrors(t *testing.T) {
+	testCases := []struct {
+		name string
+		out  []byte
+		err  error
+	}{
+		{
+			name: "permission denied",
+			out:  []byte("setquota: permission denied"),
+			err:  errors.New("exit status 1"),
+		},
+		{
+			name: "disk I/O error",
+			out:  []byte("setquota: I/O error writing quota record"),
+			err:  errors.New("exit status 2"),
+		},
+		{
+			name: "generic exit error without message",
+			out:  []byte{},
+			err:  errors.New("exit status 1"),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			exec := &fakeCommandExecutor{
+				runErrors: map[string]error{
+					"id -u cust01": nil,
+				},
+				combinedResult: map[string]fakeCommandResult{
+					"setquota -u cust01 10485760 10485760 100000 100000 /": {
+						out: tc.out,
+						err: tc.err,
+					},
+				},
+				lookups: map[string]bool{
+					"setquota":   true,
+					"php-fpm8.4": true,
+				},
+			}
+			action := newTestAction(t, exec)
+
+			res, err := action.Execute(context.Background(), testPayload(), false)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if res.Success {
+				t.Fatal("expected res.Success=false, got true")
+			}
+			if !strings.Contains(res.Error, "step 'quota' failed") {
+				t.Fatalf("expected res.Error to mention step 'quota' failed, got: %s", res.Error)
+			}
+
+			// Verify subsequent steps did NOT run
+			poolFile := filepath.Join(action.phpConfigBaseDir, "8.4", "fpm", "pool.d", "cust01.conf")
+			if _, err := os.Stat(poolFile); err == nil {
+				t.Fatal("expected pool file to NOT exist when quota fails")
+			}
+		})
+	}
+}

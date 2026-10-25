@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -262,10 +263,17 @@ func (a *AccountCreateAction) Execute(ctx context.Context, payload []byte, dryRu
 		return a.stepFailure("directories", err, logs)
 	}
 
-	if err := a.applyQuota(ctx, p); err != nil {
+	quotaSkipped, quotaSkipReason, err := a.applyQuota(ctx, p)
+	if err != nil {
 		return a.stepFailure("quota", err, logs)
 	}
-	logs = append(logs, fmt.Sprintf("applied quota settings (%d MB, %d inodes)", p.StorageMB, p.Inodes))
+	if quotaSkipped {
+		log.Printf("warning: quota unsupported on this filesystem")
+		logs = append(logs, "warning: quota unsupported on this filesystem")
+		logs = append(logs, fmt.Sprintf("step 'quota' skipped with reason: %s", quotaSkipReason))
+	} else {
+		logs = append(logs, fmt.Sprintf("applied quota settings (%d MB, %d inodes)", p.StorageMB, p.Inodes))
+	}
 
 	if err := a.deployFpmPool(ctx, p); err != nil {
 		return a.stepFailure("php_pool", err, logs)
@@ -286,17 +294,26 @@ func (a *AccountCreateAction) Execute(ctx context.Context, payload []byte, dryRu
 
 	logs = append(logs, "account.create completed successfully")
 
+	data := map[string]any{
+		"username":       p.Username,
+		"primary_domain": p.PrimaryDomain,
+		"home_dir":       homeDir,
+		"php_version":    p.PHPVersion,
+		"pool_socket":    fmt.Sprintf("/run/php/php%s-fpm-%s.sock", p.PHPVersion, p.Username),
+		"dry_run":        false,
+	}
+	if quotaSkipped {
+		data["quota_skipped"] = true
+		data["quota_skipped_reason"] = quotaSkipReason
+		data["skipped_steps"] = map[string]string{
+			"quota": quotaSkipReason,
+		}
+	}
+
 	return &ActionResult{
 		Success: true,
-		Data: map[string]any{
-			"username":       p.Username,
-			"primary_domain": p.PrimaryDomain,
-			"home_dir":       homeDir,
-			"php_version":    p.PHPVersion,
-			"pool_socket":    fmt.Sprintf("/run/php/php%s-fpm-%s.sock", p.PHPVersion, p.Username),
-			"dry_run":        false,
-		},
-		Logs: logs,
+		Data:    data,
+		Logs:    logs,
 	}, nil
 }
 
@@ -366,13 +383,21 @@ func (a *AccountCreateAction) ensureDefaultIndex(homeDir, domain string) error {
 	return nil
 }
 
-func (a *AccountCreateAction) applyQuota(ctx context.Context, p AccountCreatePayload) error {
+func isQuotaUnsupported(msg string) bool {
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "quota not enabled") ||
+		strings.Contains(lower, "cannot find filesystem") ||
+		strings.Contains(lower, "not supported") ||
+		strings.Contains(lower, "quotactl")
+}
+
+func (a *AccountCreateAction) applyQuota(ctx context.Context, p AccountCreatePayload) (skipped bool, reason string, err error) {
 	if _, err := a.executor.LookPath("setquota"); err != nil {
-		return nil
+		return false, "", nil
 	}
 
 	blocks := p.StorageMB * 1024
-	_, err := a.executor.CombinedOutput(ctx, "setquota",
+	out, err := a.executor.CombinedOutput(ctx, "setquota",
 		"-u",
 		p.Username,
 		fmt.Sprintf("%d", blocks),
@@ -382,10 +407,23 @@ func (a *AccountCreateAction) applyQuota(ctx context.Context, p AccountCreatePay
 		"/",
 	)
 	if err != nil {
-		return fmt.Errorf("setquota command failed: %w", err)
+		combined := strings.TrimSpace(string(out))
+		if combined != "" {
+			if err.Error() != "" && !strings.Contains(combined, err.Error()) {
+				combined += ": " + err.Error()
+			}
+		} else {
+			combined = err.Error()
+		}
+
+		if isQuotaUnsupported(combined) {
+			return true, "quota unsupported on this filesystem", nil
+		}
+
+		return false, "", fmt.Errorf("setquota command failed: %s", combined)
 	}
 
-	return nil
+	return false, "", nil
 }
 
 func (a *AccountCreateAction) deployFpmPool(ctx context.Context, p AccountCreatePayload) error {
