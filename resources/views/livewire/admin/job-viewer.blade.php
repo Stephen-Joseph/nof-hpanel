@@ -74,6 +74,7 @@
                 <thead>
                     <tr class="border-b border-border bg-shell/50 text-muted font-medium">
                         <th class="py-3 px-6">Job ID / Time</th>
+                        <th class="py-3 px-6">Account</th>
                         <th class="py-3 px-6">Server</th>
                         <th class="py-3 px-6">Action</th>
                         <th class="py-3 px-6">Status</th>
@@ -87,6 +88,16 @@
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <span class="font-mono text-xs text-primary-500 font-medium block truncate max-w-xs">{{ $job->id }}</span>
                                 <span class="text-xs text-muted">{{ $job->created_at?->diffForHumans() }}</span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                @if ($job->account)
+                                    <a href="{{ route('accounts.show', $job->account) }}" class="font-bold text-main hover:text-primary-500 transition block">
+                                        {{ $job->account->primary_domain }}
+                                    </a>
+                                    <span class="text-xs text-muted font-mono">{{ $job->account->linux_username }}</span>
+                                @else
+                                    <span class="text-xs text-muted italic">System / None</span>
+                                @endif
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <div class="font-medium text-main">{{ $job->server->name }}</div>
@@ -129,7 +140,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="px-6 py-8 text-center text-muted text-xs">
+                            <td colspan="7" class="px-6 py-8 text-center text-muted text-xs">
                                 No agent jobs found matching the current criteria.
                             </td>
                         </tr>
@@ -167,7 +178,12 @@
                                 <span class="px-2 py-0.5 rounded-full text-[10px] bg-amber-500/10 text-amber-500 border border-amber-500/20">dry-run</span>
                             @endif
                         </div>
-                        <p class="text-xs text-muted font-mono mt-1">ID: {{ $selectedJob->id }} &bull; Server: {{ $selectedJob->server->name }} ({{ $selectedJob->server->hostname }})</p>
+                        <p class="text-xs text-muted font-mono mt-1">
+                            ID: {{ $selectedJob->id }} &bull; Server: {{ $selectedJob->server->name }} ({{ $selectedJob->server->hostname }})
+                            @if ($selectedJob->account)
+                                &bull; Account: <a href="{{ route('accounts.show', $selectedJob->account) }}" class="text-primary-500 hover:underline">{{ $selectedJob->account->primary_domain }} ({{ $selectedJob->account->linux_username }})</a>
+                            @endif
+                        </p>
                     </div>
                     <button wire:click="closeModal" class="text-muted hover:text-main text-xl leading-none cursor-pointer">&times;</button>
                 </div>

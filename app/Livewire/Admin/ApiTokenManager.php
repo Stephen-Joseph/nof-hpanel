@@ -26,6 +26,8 @@ class ApiTokenManager extends Component
 
     public string $webhookEvents = 'account.created,account.suspended,account.terminated';
 
+    public ?int $tokenToRevokeId = null;
+
     public function createToken(): void
     {
         abort_unless(Auth::user()?->isAdmin(), 403);
@@ -58,12 +60,28 @@ class ApiTokenManager extends Component
         session()->flash('status', 'API token created successfully. Copy the token now; it will not be displayed again.');
     }
 
-    public function revokeToken(int $id): void
+    public function confirmRevoke(int $id): void
     {
         abort_unless(Auth::user()?->isAdmin(), 403);
 
-        $token = ApiToken::findOrFail($id);
+        $this->tokenToRevokeId = $id;
+        $this->dispatch('open-modal', 'revoke-admin-token-modal');
+    }
+
+    public function revokeToken(?int $id = null): void
+    {
+        abort_unless(Auth::user()?->isAdmin(), 403);
+
+        $targetId = $id ?? $this->tokenToRevokeId;
+        if (! $targetId) {
+            return;
+        }
+
+        $token = ApiToken::findOrFail($targetId);
         $token->revoke();
+
+        $this->tokenToRevokeId = null;
+        $this->dispatch('close-modal', 'revoke-admin-token-modal');
 
         session()->flash('status', "API token '{$token->name}' revoked.");
     }

@@ -4,6 +4,7 @@ namespace App\Livewire\Admin;
 
 use App\Models\Account;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 use Livewire\Component;
 
@@ -13,12 +14,12 @@ class UsageOverview extends Component
 
     public function mount(): void
     {
-        $this->authorize('viewAny', Account::class);
+        $this->authorize('create', Account::class);
     }
 
     public function collectAll(): void
     {
-        $this->authorize('viewAny', Account::class);
+        abort_unless(Auth::user()?->isAdmin(), 403);
 
         Artisan::call('usage:collect');
 
@@ -27,10 +28,10 @@ class UsageOverview extends Component
 
     public function toggleThrottle(int $accountId): void
     {
-        $this->authorize('viewAny', Account::class);
-
         /** @var Account $account */
         $account = Account::findOrFail($accountId);
+        $this->authorize('update', $account);
+
         $account->update(['is_throttled' => ! $account->is_throttled]);
 
         session()->flash('success', "Throttling status updated for {$account->linux_username}.");
@@ -38,7 +39,12 @@ class UsageOverview extends Component
 
     public function render(): View
     {
-        $query = Account::with(['package', 'server', 'user'])->latest();
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+
+        $query = Account::with(['package', 'server', 'user'])
+            ->visibleTo($user)
+            ->latest();
 
         $accounts = $query->get();
 

@@ -70,7 +70,7 @@ Route::middleware('auth')->group(function () {
 
         Route::get('/admin/usage', function () {
             return view('admin.usage.index');
-        })->middleware('can:viewAny,'.Server::class)->name('admin.usage.index');
+        })->middleware('can:create,'.Account::class)->name('admin.usage.index');
 
         // Servers (Admin Only)
         Route::get('/servers', function () {
@@ -89,7 +89,7 @@ Route::middleware('auth')->group(function () {
     // Reseller Control Center & Customer Management
     Route::get('/reseller', function () {
         return view('reseller.index');
-    })->name('reseller.index');
+    })->middleware('can:create,'.Account::class)->name('reseller.index');
 
     Route::get('/users/create', function () {
         return redirect()->route('reseller.index');

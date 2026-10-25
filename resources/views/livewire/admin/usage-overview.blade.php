@@ -4,14 +4,16 @@
         title="System Resource Metering &amp; Quotas" 
         subtitle="Cross-account usage telemetry, storage and bandwidth monitoring, and quota enforcement."
     >
-        <x-slot:actions>
-            <x-ui.button wire:click="collectAll" variant="primary" size="sm">
-                <svg class="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Collect All Usage
-            </x-ui.button>
-        </x-slot:actions>
+        @if(Auth::user()?->isAdmin())
+            <x-slot:actions>
+                <x-ui.button wire:click="collectAll" variant="primary" size="sm">
+                    <svg class="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Collect All Usage
+                </x-ui.button>
+            </x-slot:actions>
+        @endif
     </x-layout.page-header>
 
     <!-- Status Alerts -->
@@ -96,9 +98,11 @@
                                 @if($acc->is_throttled)
                                     <x-ui.chip variant="danger" size="sm">Throttled</x-ui.chip>
                                 @elseif($acc->highestUsagePercentage() >= 100)
-                                    <x-ui.chip variant="danger" size="sm">Quota Exceeded</x-ui.chip>
+                                    <x-ui.chip variant="danger" size="sm">Exceeded (100%+)</x-ui.chip>
+                                @elseif($acc->highestUsagePercentage() >= 90)
+                                    <x-ui.chip variant="warning" size="sm">Critical (90%+)</x-ui.chip>
                                 @elseif($acc->highestUsagePercentage() >= 80)
-                                    <x-ui.chip variant="warning" size="sm">Warning</x-ui.chip>
+                                    <x-ui.chip variant="warning" size="sm">Warning (80%+)</x-ui.chip>
                                 @else
                                     <x-ui.chip variant="success" size="sm">Normal</x-ui.chip>
                                 @endif

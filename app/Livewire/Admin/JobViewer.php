@@ -103,11 +103,15 @@ class JobViewer extends Component
 
         $servers = Server::orderBy('name')->get(['id', 'name', 'hostname']);
 
-        $jobs = AgentJob::with(['server', 'dispatcher'])
+        $jobs = AgentJob::with(['server', 'dispatcher', 'account'])
             ->when($this->search !== '', function (Builder $query): void {
                 $query->where(function (Builder $sub): void {
                     $sub->where('action', 'like', '%'.$this->search.'%')
                         ->orWhere('id', 'like', '%'.$this->search.'%')
+                        ->orWhereHas('account', function (Builder $accountQuery): void {
+                            $accountQuery->where('primary_domain', 'like', '%'.$this->search.'%')
+                                ->orWhere('linux_username', 'like', '%'.$this->search.'%');
+                        })
                         ->orWhereHas('server', function (Builder $serverQuery): void {
                             $serverQuery->where('name', 'like', '%'.$this->search.'%')
                                 ->orWhere('hostname', 'like', '%'.$this->search.'%');

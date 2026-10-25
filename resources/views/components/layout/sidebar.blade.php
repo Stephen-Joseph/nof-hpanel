@@ -1,7 +1,6 @@
 @php
     /** @var \App\Models\User|null $user */
     $user = Auth::user();
-    $primaryAccount = $user && $user->isCustomer() ? $user->accounts()->first() : null;
 @endphp
 
 <div class="flex flex-col h-full justify-between p-4 sm:p-5 select-none">
@@ -34,6 +33,16 @@
                 </svg>
             </x-layout.nav-item>
 
+            @if ($user?->isReseller())
+                <!-- Reseller Center -->
+                <x-layout.nav-item :href="route('reseller.index')" :active="request()->routeIs('reseller*')">
+                    <x-slot:label>Reseller Center</x-slot:label>
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                    </svg>
+                </x-layout.nav-item>
+            @endif
+
             <!-- Websites & Domains -->
             <x-layout.nav-item :href="route('domains.index')" :active="request()->routeIs('domains*')">
                 <x-slot:label>Websites &amp; Domains</x-slot:label>
@@ -42,58 +51,16 @@
                 </svg>
             </x-layout.nav-item>
 
-            @if ($primaryAccount)
-                <!-- Files -->
-                <x-layout.nav-item :href="route('accounts.files', $primaryAccount)" :active="request()->routeIs('accounts.files*')">
-                    <x-slot:label>Files</x-slot:label>
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                    </svg>
-                </x-layout.nav-item>
-
-                <!-- Databases -->
-                <x-layout.nav-item :href="route('accounts.databases', $primaryAccount)" :active="request()->routeIs('accounts.databases*')">
-                    <x-slot:label>Databases</x-slot:label>
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2 1.5 3 3.5 3.5M4 7c0-2 1.5-3 3.5-3.5M4 7h16M20 7v10c0 2-1.5 3-3.5 3.5M20 7c0-2-1.5-3-3.5-3.5M4 12h16M4 17h16"/>
-                    </svg>
-                </x-layout.nav-item>
-
-                <!-- Backups -->
-                <x-layout.nav-item :href="route('accounts.backups', $primaryAccount)" :active="request()->routeIs('accounts.backups*')">
-                    <x-slot:label>Backups</x-slot:label>
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                    </svg>
-                </x-layout.nav-item>
-
-                <!-- Cron Jobs -->
-                <x-layout.nav-item :href="route('accounts.cron', $primaryAccount)" :active="request()->routeIs('accounts.cron*')">
-                    <x-slot:label>Cron Jobs</x-slot:label>
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                </x-layout.nav-item>
-
-                <!-- Resource Quota / Usage -->
-                <x-layout.nav-item :href="route('accounts.usage', $primaryAccount)" :active="request()->routeIs('accounts.usage*')">
-                    <x-slot:label>Usage &amp; Quota</x-slot:label>
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                    </svg>
-                </x-layout.nav-item>
-            @endif
+            <!-- Accounts (All Roles: Admin sees all, Reseller sees own subtree, Customer sees own) -->
+            <x-layout.nav-item :href="route('accounts.index')" :active="request()->routeIs('accounts*')">
+                <x-slot:label>Accounts</x-slot:label>
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                </svg>
+            </x-layout.nav-item>
 
             @if ($user?->isAdmin() || $user?->isReseller())
-                <!-- Accounts -->
-                <x-layout.nav-item :href="route('accounts.index')" :active="request()->routeIs('accounts.index*') || request()->routeIs('accounts.show*')">
-                    <x-slot:label>Accounts</x-slot:label>
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-                    </svg>
-                </x-layout.nav-item>
-
-                <!-- Packages -->
+                <!-- Hosting Packages -->
                 <x-layout.nav-item :href="route('packages.index')" :active="request()->routeIs('packages*')">
                     <x-slot:label>Hosting Packages</x-slot:label>
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -103,11 +70,39 @@
             @endif
 
             @if ($user?->isAdmin())
-                <!-- Servers -->
+                <!-- Server Nodes -->
                 <x-layout.nav-item :href="route('servers.index')" :active="request()->routeIs('servers*')">
                     <x-slot:label>Server Nodes</x-slot:label>
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
+                    </svg>
+                </x-layout.nav-item>
+
+                <!-- Jobs -->
+                <x-layout.nav-item :href="route('admin.jobs.index')" :active="request()->routeIs('admin.jobs*')">
+                    <x-slot:label>Jobs</x-slot:label>
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                    </svg>
+                </x-layout.nav-item>
+            @endif
+
+            @if ($user?->isAdmin() || $user?->isReseller())
+                <!-- Usage -->
+                <x-layout.nav-item :href="route('admin.usage.index')" :active="request()->routeIs('admin.usage*')">
+                    <x-slot:label>Usage</x-slot:label>
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                    </svg>
+                </x-layout.nav-item>
+            @endif
+
+            @if ($user?->isAdmin())
+                <!-- API Tokens -->
+                <x-layout.nav-item :href="route('admin.api-tokens.index')" :active="request()->routeIs('admin.api-tokens*')">
+                    <x-slot:label>API Tokens</x-slot:label>
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
                     </svg>
                 </x-layout.nav-item>
 

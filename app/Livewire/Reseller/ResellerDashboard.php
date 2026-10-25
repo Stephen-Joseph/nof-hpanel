@@ -4,6 +4,7 @@ namespace App\Livewire\Reseller;
 
 use App\Enums\UserRole;
 use App\Enums\UserStatus;
+use App\Models\Account;
 use App\Models\Package;
 use App\Models\ResellerProfile;
 use App\Models\User;
@@ -189,9 +190,19 @@ class ResellerDashboard extends Component
             ->latest()
             ->get();
 
+        $customersCount = $customers->count();
+
+        $recentAccounts = Account::visibleTo($this->reseller)
+            ->with(['package', 'user', 'server'])
+            ->latest()
+            ->take(5)
+            ->get();
+
         return view('livewire.reseller.reseller-dashboard', [
             'customers' => $customers,
+            'customersCount' => $customersCount,
             'packages' => $packages,
+            'recentAccounts' => $recentAccounts,
             'usedAccounts' => $this->profile->usedAccountsCount(),
             'usedStorage' => $this->profile->usedStorageMb(),
             'usedBandwidth' => $this->profile->usedBandwidthGb(),

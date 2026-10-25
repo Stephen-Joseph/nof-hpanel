@@ -67,6 +67,7 @@
                     <thead>
                         <tr class="border-b border-border bg-shell/50 text-muted font-medium">
                             <th class="py-3 px-6">Name</th>
+                            <th class="py-3 px-6">Owner</th>
                             <th class="py-3 px-6">Scopes</th>
                             <th class="py-3 px-6">Last Used</th>
                             <th class="py-3 px-6">Status</th>
@@ -79,6 +80,10 @@
                                 <td class="px-6 py-3.5">
                                     <div class="font-bold text-main">{{ $token->name }}</div>
                                     <div class="font-mono text-[10px] text-muted">{{ substr($token->token_hash, 0, 12) }}...</div>
+                                </td>
+                                <td class="px-6 py-3.5">
+                                    <div class="font-medium text-main">{{ $token->user?->name ?? 'System' }}</div>
+                                    <div class="text-[10px] text-muted">{{ $token->user?->email ?? '—' }}</div>
                                 </td>
                                 <td class="px-6 py-3.5 font-mono text-muted">
                                     {{ implode(', ', $token->scopes ?? ['*']) }}
@@ -97,7 +102,7 @@
                                 </td>
                                 <td class="px-6 py-3.5 text-right">
                                     @if (! $token->isRevoked())
-                                        <button wire:click="revokeToken({{ $token->id }})" wire:confirm="Are you sure you want to revoke this API token?"
+                                        <button wire:click="confirmRevoke({{ $token->id }})"
                                             class="text-rose-500 hover:text-rose-600 font-medium cursor-pointer">
                                             Revoke
                                         </button>
@@ -106,7 +111,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="px-6 py-6 text-center text-muted text-xs">No API tokens configured.</td>
+                                <td colspan="6" class="px-6 py-6 text-center text-muted text-xs">No API tokens configured.</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -184,4 +189,34 @@
             </div>
         </x-ui.card>
     </div>
+
+    <!-- Revoke Token Confirmation Modal -->
+    <x-ui.modal name="revoke-admin-token-modal" max-width="sm">
+        <div class="p-6 space-y-4">
+            <div class="flex items-center gap-3 text-rose-500">
+                <div class="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-base font-semibold text-main">Revoke API Token</h3>
+                    <p class="text-xs text-muted">This action cannot be undone.</p>
+                </div>
+            </div>
+
+            <p class="text-xs text-muted">
+                Any external billing or orchestration integration using this token will immediately receive a 401 Unauthorized response.
+            </p>
+
+            <div class="flex items-center justify-end gap-3 pt-3 border-t border-border">
+                <x-ui.button type="button" variant="ghost" size="sm" x-on:click="$dispatch('close-modal', 'revoke-admin-token-modal')">
+                    Cancel
+                </x-ui.button>
+                <x-ui.button type="button" variant="danger" size="sm" wire:click="revokeToken">
+                    Yes, Revoke Token
+                </x-ui.button>
+            </div>
+        </div>
+    </x-ui.modal>
 </div>

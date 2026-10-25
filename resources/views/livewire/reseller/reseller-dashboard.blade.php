@@ -32,7 +32,22 @@
     @endif
 
     <!-- Resource Pool Allocation Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <!-- Customers Tile -->
+        <x-ui.card>
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-muted">Customers</span>
+                <span class="text-xs font-mono font-bold text-sky-500">Active</span>
+            </div>
+            <div class="flex items-baseline gap-2 mb-3">
+                <span class="text-2xl font-bold text-main font-mono">{{ $customersCount }}</span>
+                <span class="text-xs text-muted">Client Users</span>
+            </div>
+            <div class="w-full bg-shell rounded-full h-2 overflow-hidden border border-border">
+                <div class="bg-sky-500 h-2 rounded-full" style="width: 100%"></div>
+            </div>
+        </x-ui.card>
+
         <!-- Accounts Pool -->
         <x-ui.card>
             <div class="flex items-center justify-between mb-2">
@@ -94,7 +109,78 @@
 
     <!-- Customers Tab -->
     @if ($activeTab === 'overview')
+        <!-- Recent Accounts Section -->
+        <x-ui.card class="p-0 overflow-hidden mb-6">
+            <div class="px-6 py-4 border-b border-border flex items-center justify-between">
+                <div>
+                    <h3 class="text-sm font-bold text-main">Recent Hosting Accounts</h3>
+                    <p class="text-xs text-muted">Latest provisioned accounts in your reseller pool</p>
+                </div>
+                <a href="{{ route('accounts.index') }}" class="text-xs text-primary-500 hover:text-primary-600 font-medium">
+                    View All Accounts &rarr;
+                </a>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr class="border-b border-border bg-shell/50 text-muted font-medium">
+                            <th class="py-3.5 px-6">Domain / User</th>
+                            <th class="py-3.5 px-6">Customer</th>
+                            <th class="py-3.5 px-6">Package</th>
+                            <th class="py-3.5 px-6">Storage</th>
+                            <th class="py-3.5 px-6">Status</th>
+                            <th class="py-3.5 px-6 text-right">Created</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-border font-mono text-main">
+                        @forelse ($recentAccounts as $acc)
+                            <tr class="hover:bg-shell/40 transition">
+                                <td class="px-6 py-3.5">
+                                    <a href="{{ route('accounts.show', $acc) }}" class="font-sans font-bold text-main hover:text-primary-500 transition block">
+                                        {{ $acc->primary_domain }}
+                                    </a>
+                                    <span class="text-muted font-mono text-[11px]">{{ $acc->linux_username }}</span>
+                                </td>
+                                <td class="px-6 py-3.5 font-sans text-muted">
+                                    {{ $acc->user?->name ?? '—' }}
+                                </td>
+                                <td class="px-6 py-3.5 font-sans text-muted">
+                                    {{ $acc->package?->name ?? '—' }}
+                                </td>
+                                <td class="px-6 py-3.5">
+                                    {{ round($acc->current_storage_mb, 1) }} MB
+                                </td>
+                                <td class="px-6 py-3.5 font-sans">
+                                    <x-ui.chip :variant="match ($acc->status->value) {
+                                        'active' => 'success',
+                                        'suspended' => 'danger',
+                                        'pending' => 'warning',
+                                        default => 'default',
+                                    }" size="sm">
+                                        {{ ucfirst($acc->status->value) }}
+                                    </x-ui.chip>
+                                </td>
+                                <td class="px-6 py-3.5 text-right font-sans text-muted">
+                                    {{ $acc->created_at?->diffForHumans() }}
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="6" class="px-6 py-6 text-center text-muted font-sans text-xs">
+                                    No hosting accounts provisioned yet.
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </x-ui.card>
+
         <x-ui.card class="p-0 overflow-hidden">
+            <div class="px-6 py-4 border-b border-border">
+                <h3 class="text-sm font-bold text-main">Customer Accounts</h3>
+                <p class="text-xs text-muted">Client users registered under your reseller organization</p>
+            </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse text-xs">
                     <thead>
