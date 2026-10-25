@@ -176,3 +176,99 @@ test('production environment refuses to execute with default or empty HMAC secre
 
     $this->client->execute($this->server, 'system.ping');
 })->throws(\RuntimeException::class, 'PANEL_AGENT_HMAC_SECRET must be configured to a non-default value in production.');
+
+test('signed payload with slash and unicode transmits identical serialized bytes in request body', function () {
+    Http::fake([
+        'https://10.0.0.10:8443/action' => Http::response([
+            'request_id' => 'req-slash-unicode',
+            'action' => 'file.write',
+            'success' => true,
+            'data' => ['bytes' => 42],
+            'logs' => [],
+        ], 200),
+    ]);
+
+    $payload = [
+        'path' => '/home/alicecorp/public_html/föö/bär/index.php',
+        'content' => '<?php echo "Hello / 世界 / café!";',
+    ];
+
+    $expectedPayloadJson = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+    $this->client->execute($this->server, 'file.write', $payload, false, 'req-slash-unicode');
+
+    Http::assertSent(function (Request $request) use ($expectedPayloadJson, $payload) {
+        $rawBody = $request->body();
+
+        // 1. Verify the transmitted raw HTTP body contains the exact unescaped payload JSON bytes
+        expect($rawBody)->toContain('"payload":'.$expectedPayloadJson);
+
+        // 2. Verify slashes and unicode are NOT escaped in the transmitted body
+        expect($rawBody)->toContain('/home/alicecorp/public_html/föö/bär/index.php')
+            ->and($rawBody)->toContain('Hello / 世界 / café!')
+            ->and($rawBody)->not->toContain('\/home\/alicecorp')
+            ->and($rawBody)->not->toContain('\u');
+
+        // 3. Extract the transmitted payload from the raw body and verify it matches the signed string
+        preg_match('/"payload":(.*?),"signature"/s', $rawBody, $matches);
+        expect($matches[1])->toBe($expectedPayloadJson);
+
+        // 4. Verify signature on the request was computed using the exact signed payload string
+        $data = $request->data();
+        $expectedSignature = $this->client->sign(
+            'file.write',
+            'req-slash-unicode',
+            $data['timestamp'],
+            $data['nonce'],
+            false,
+            $expectedPayloadJson,
+            'test-secret-key-12345'
+        );
+
+        expect($data['signature'])->toBe($expectedSignature)
+            ->and($data['payload'])->toBe($payload);
+
+        return true;
+    });
+});
+
+test('empty payload serializes to {} in both signed string and transmitted body', function () {
+    Http::fake([
+        'https://10.0.0.10:8443/action' => Http::response([
+            'request_id' => 'req-empty-payload',
+            'action' => 'system.ping',
+            'success' => true,
+            'data' => ['pong' => true],
+            'logs' => [],
+        ], 200),
+    ]);
+
+    $this->client->execute($this->server, 'system.ping', [], false, 'req-empty-payload');
+
+    Http::assertSent(function (Request $request) {
+        $rawBody = $request->body();
+
+        // 1. Transmitted body contains "payload":{}
+        expect($rawBody)->toContain('"payload":{}');
+
+        // 2. Extracted payload substring is exactly '{}'
+        preg_match('/"payload":(.*?),"signature"/s', $rawBody, $matches);
+        expect($matches[1])->toBe('{}');
+
+        // 3. Signature matches signed '{}'
+        $data = $request->data();
+        $expectedSignature = $this->client->sign(
+            'system.ping',
+            'req-empty-payload',
+            $data['timestamp'],
+            $data['nonce'],
+            false,
+            '{}',
+            'test-secret-key-12345'
+        );
+
+        expect($data['signature'])->toBe($expectedSignature);
+
+        return true;
+    });
+});

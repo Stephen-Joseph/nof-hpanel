@@ -107,17 +107,7 @@ class AgentClient
         $signature = $this->sign($action, $requestId, $timestamp, $nonce, $dryRun, $payloadJson, $secret);
 
         $url = rtrim($server->agent_url, '/').'/action';
-        $requestPayload = empty($payload) ? new \stdClass : $payload;
-
-        $body = [
-            'action' => $action,
-            'request_id' => $requestId,
-            'timestamp' => $timestamp,
-            'nonce' => $nonce,
-            'dry_run' => $dryRun,
-            'payload' => $requestPayload,
-            'signature' => $signature,
-        ];
+        $bodyJson = $this->buildRequestBody($action, $requestId, $timestamp, $nonce, $dryRun, $payloadJson, $signature);
 
         $attempt = 0;
         $lastException = null;
@@ -126,7 +116,7 @@ class AgentClient
             $attempt++;
 
             try {
-                $response = $this->sendHttpRequest($url, $body);
+                $response = $this->sendHttpRequest($url, $bodyJson);
 
                 return $this->handleResponse($response, $action, $requestId);
             } catch (AgentSecurityException|AgentClientException $e) {
@@ -179,11 +169,35 @@ class AgentClient
     }
 
     /**
+     * Build the raw JSON request body embedding the exact signed payloadJson bytes.
+     */
+    public function buildRequestBody(
+        string $action,
+        string $requestId,
+        int $timestamp,
+        string $nonce,
+        bool $dryRun,
+        string $payloadJson,
+        string $signature
+    ): string {
+        return sprintf(
+            '{"action":%s,"request_id":%s,"timestamp":%d,"nonce":%s,"dry_run":%s,"payload":%s,"signature":%s}',
+            json_encode($action, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            json_encode($requestId, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            $timestamp,
+            json_encode($nonce, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            $dryRun ? 'true' : 'false',
+            $payloadJson,
+            json_encode($signature, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+        );
+    }
+
+    /**
      * Prepare HTTP client with mTLS options and timeouts.
      *
-     * @param  array<string, mixed>  $body
+     * @param  string|array<string, mixed>  $body
      */
-    protected function sendHttpRequest(string $url, array $body): Response
+    protected function sendHttpRequest(string $url, string|array $body): Response
     {
         $timeout = (int) config('services.agent.timeout', 30);
         $connectTimeout = (int) config('services.agent.connect_timeout', 5);
@@ -204,12 +218,16 @@ class AgentClient
             $options['verify'] = $caFile;
         }
 
-        return Http::timeout($timeout)
+        $request = Http::timeout($timeout)
             ->connectTimeout($connectTimeout)
             ->withOptions($options)
-            ->asJson()
-            ->acceptJson()
-            ->post($url, $body);
+            ->acceptJson();
+
+        if (is_string($body)) {
+            return $request->withBody($body, 'application/json')->post($url);
+        }
+
+        return $request->asJson()->post($url, $body);
     }
 
     /**
