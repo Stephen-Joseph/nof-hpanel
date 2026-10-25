@@ -30,6 +30,11 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(openssl rand -base64 18 | tr -d '/+=')}"
 DRY_RUN=false
 NO_PROGRESS=false
 QUIET=false
+INSTALL_NODE="${INSTALL_NODE:-}"
+NODE_PUBLIC_IPS="${NODE_PUBLIC_IPS:-}"
+NODE_NAME="${NODE_NAME:-}"
+NODE_STATUS="skipped"
+PANEL_STATUS="installed"
 CREDS_FILE="/root/hpanel-install.txt"
 LOG_FILE="/var/log/hpanel-install.log"
 
@@ -42,6 +47,9 @@ while [[ $# -gt 0 ]]; do
     --dir)         APP_DIR="$2"; shift 2 ;;
     --php)         PHP_VERSION="$2"; shift 2 ;;
     --ssh-port)    SSH_PORT="$2"; shift 2 ;;
+    --install-node) INSTALL_NODE="$2"; shift 2 ;;
+    --node-public-ips) NODE_PUBLIC_IPS="$2"; shift 2 ;;
+    --node-name)   NODE_NAME="$2"; shift 2 ;;
     --dry-run)     DRY_RUN=true; shift ;;
     --no-progress) NO_PROGRESS=true; shift ;;
     -q|--quiet)    QUIET=true; shift ;;
@@ -67,6 +75,108 @@ fi
 mkdir -p "$(dirname "$LOG_FILE")"
 printf '\n===== HPanel install started %s =====\n' "$(date)" >>"$LOG_FILE"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NODE_INSTALLER="${SCRIPT_DIR}/install-node.sh"
+
+validate_ip() {
+  local ip="$1"
+  if command -v php >/dev/null 2>&1; then
+    # shellcheck disable=SC2016
+    php -r 'exit(filter_var($argv[1], FILTER_VALIDATE_IP) ? 0 : 1);' "$ip" 2>/dev/null && return 0
+    return 1
+  fi
+  # IPv4
+  if [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    local -a octets
+    IFS="." read -r -a octets <<< "$ip"
+    for octet in "${octets[@]}"; do
+      if [[ "$octet" =~ ^0[0-9]+$ ]] || (( octet < 0 || octet > 255 )); then
+        return 1
+      fi
+    done
+    return 0
+  fi
+  # IPv6
+  if [[ "$ip" =~ ^[0-9a-fA-F:]+$ ]] && [[ "$ip" == *:* ]]; then
+    if [[ "$ip" =~ ^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$ ]]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# Prompt or validate node settings at start of run before any installation begins
+if [[ -t 0 && -z "${INSTALL_NODE}" ]]; then
+  printf '%s' "Also set up a hosting node on this VPS? [y/N] "
+  read -r response
+  case "$response" in
+    [yY]|[yY][eE][sS])
+      INSTALL_NODE="yes"
+      while true; do
+        printf '%s' "Public IP address(es), comma separated: "
+        read -r input_ips
+        input_ips="$(echo "$input_ips" | tr -d ' ')"
+        if [[ -z "$input_ips" ]]; then
+          echo "At least one public IP address is required. Please re-enter." >&2
+          continue
+        fi
+        IFS=',' read -ra ip_list <<< "$input_ips"
+        all_valid=true
+        for ip in "${ip_list[@]}"; do
+          if [[ -z "$ip" ]] || ! validate_ip "$ip"; then
+            echo "Invalid IP address: '$ip'. Must be a valid IPv4 or IPv6 address." >&2
+            all_valid=false
+            break
+          fi
+        done
+        if [[ "$all_valid" == true ]]; then
+          NODE_PUBLIC_IPS="$input_ips"
+          break
+        fi
+      done
+
+      DEFAULT_NODE_NAME="$(hostname -s 2>/dev/null || echo "node-1")"
+      printf '%s' "Node display name [${DEFAULT_NODE_NAME}]: "
+      read -r input_name
+      NODE_NAME="${input_name:-$DEFAULT_NODE_NAME}"
+      ;;
+    *)
+      INSTALL_NODE="no"
+      echo "Skipping node setup. Run deploy/install-node.sh later to add a node."
+      ;;
+  esac
+else
+  case "${INSTALL_NODE:-no}" in
+    [yY]|[yY][eE][sS]|true|1)
+      INSTALL_NODE="yes"
+      ;;
+    *)
+      INSTALL_NODE="no"
+      ;;
+  esac
+
+  if [[ "$INSTALL_NODE" == "yes" ]]; then
+    if [[ -z "${NODE_PUBLIC_IPS:-}" ]]; then
+      echo "Error: INSTALL_NODE=yes requires NODE_PUBLIC_IPS (comma-separated list of IP addresses)." >&2
+      exit 1
+    fi
+    input_ips="$(echo "$NODE_PUBLIC_IPS" | tr -d ' ')"
+    IFS=',' read -ra ip_list <<< "$input_ips"
+    if [[ ${#ip_list[@]} -eq 0 ]]; then
+      echo "Error: NODE_PUBLIC_IPS must contain at least one valid IP address." >&2
+      exit 1
+    fi
+    for ip in "${ip_list[@]}"; do
+      if [[ -z "$ip" ]] || ! validate_ip "$ip"; then
+        echo "Error: Invalid IP address '$ip' in NODE_PUBLIC_IPS. Must be a valid IPv4 or IPv6 address." >&2
+        exit 1
+      fi
+    done
+    NODE_PUBLIC_IPS="$input_ips"
+    NODE_NAME="${NODE_NAME:-$(hostname -s 2>/dev/null || echo "node-1")}"
+  fi
+fi
+
 PHP_BIN="/usr/bin/php${PHP_VERSION}"
 COMPOSER_BIN="/usr/local/bin/composer"
 ENV_FILE="$APP_DIR/.env"
@@ -90,6 +200,13 @@ STEPS=(
   "Queue worker & scheduler"
   "Final checks"
 )
+
+if [[ "$INSTALL_NODE" == "yes" ]]; then
+  STEPS+=(
+    "Hosting node agent"
+    "Local node enrollment"
+  )
+fi
 TOTAL=${#STEPS[@]}
 
 # ---- State ------------------------------------------------------------------
@@ -100,6 +217,7 @@ WARNINGS=()
 RES_NAME=(); RES_TIME=(); RES_STAT=()
 
 # ---- Colours (real ESC bytes via $'...') -------------------------------------
+# shellcheck disable=SC2034
 if [[ -t 1 && $NO_PROGRESS == false && $QUIET == false ]]; then
   IS_TTY=true
   C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_BLUE=$'\033[38;5;39m'
@@ -156,7 +274,7 @@ draw_bar() { # $1 pct  $2 cur  $3 total  $4 label  $5 seconds  $6 detail
 
 spinner_loop() {
   set +e
-  local frames='|/-\' i=0 now detail
+  local frames="|/-\\" i=0 now detail
   while :; do
     now=$(date +%s)
     detail=$(tail -n 1 "$LOG_FILE" 2>/dev/null | tr -cd '[:print:]' | tr -s ' ')
@@ -219,6 +337,10 @@ on_error() {
   printf 'Failed step : %s\n' "${STEP_NAME:-initialisation}"
   printf 'Reason      : %s\n' "${FAIL_MSG:-command failed (exit $code, script line $line)}"
   printf 'Log file    : %s\n' "$LOG_FILE"
+  if [[ "${STEP_NAME:-}" =~ [Nn]ode ]] || systemctl is-active hpanel-agent >/dev/null 2>&1; then
+    printf -- '----- last 30 journal lines (hpanel-agent) -----\n'
+    journalctl -u hpanel-agent -n 30 --no-pager 2>/dev/null | sed 's/^/  | /' || true
+  fi
   printf -- '----- last 20 log lines -----\n'
   tail -n 20 "$LOG_FILE" 2>/dev/null | sed 's/^/  | /' || true
   printf '======================================================================\n'
@@ -246,10 +368,20 @@ print_summary() {
     for w in "${WARNINGS[@]}"; do say "  - $w"; done
   fi
   say ""
-  say "Panel URL:    https://${PANEL_DOMAIN}"
-  say "Admin email:  ${ADMIN_EMAIL}"
-  say "Credentials:  ${CREDS_FILE} (root only)"
-  say "Log file:     ${LOG_FILE}"
+  say "Panel:              ${PANEL_STATUS}"
+  say "Node on this VPS:   ${NODE_STATUS}"
+  if [[ "$NODE_STATUS" =~ installed && "$INSTALL_NODE" == "yes" ]]; then
+    say "Node public IP(s):  ${NODE_PUBLIC_IPS}"
+    say "Agent listen:       127.0.0.1:8443"
+  fi
+  say "Panel URL:          https://${PANEL_DOMAIN}"
+  say "Admin email:        ${ADMIN_EMAIL}"
+  say "Credentials:        ${CREDS_FILE} (root only)"
+  say "Log file:           ${LOG_FILE}"
+  if [[ "$NODE_STATUS" == "installed and enrolled" ]]; then
+    say ""
+    say "Node enrolled as ${NODE_NAME}. Open Server Nodes in the panel to verify it is Active."
+  fi
 }
 
 trap 'on_error $? $LINENO' ERR
@@ -267,6 +399,7 @@ fi
 # =============================================================================
 step_begin
 # 1. System check
+# shellcheck disable=SC1091
 . /etc/os-release
 OS_ID=$ID
 OS_MAJOR=${VERSION_ID%%.*}
@@ -559,5 +692,51 @@ if [[ $DRY_RUN == false ]]; then
   esac
 fi
 step_end ok
+
+# =============================================================================
+if [[ "$INSTALL_NODE" == "yes" ]]; then
+  step_begin
+  # 14. Hosting node agent
+  FIRST_PUBLIC_IP="${NODE_PUBLIC_IPS%%,*}"
+  FIRST_PUBLIC_IP="$(echo "$FIRST_PUBLIC_IP" | tr -d ' ')"
+
+  if [[ $DRY_RUN == true ]]; then
+    log "[dry-run] would run $NODE_INSTALLER with PANEL_IP=127.0.0.1 AGENT_LISTEN=127.0.0.1:8443 NODE_NAME=$NODE_NAME NODE_PUBLIC_IP=$FIRST_PUBLIC_IP"
+  else
+    if [[ ! -f "$NODE_INSTALLER" ]]; then
+      fail "Node installer script not found at $NODE_INSTALLER"
+    fi
+    PANEL_IP="127.0.0.1" \
+    AGENT_LISTEN="127.0.0.1:8443" \
+    NODE_NAME="$NODE_NAME" \
+    NODE_PUBLIC_IP="$FIRST_PUBLIC_IP" \
+    bash "$NODE_INSTALLER" >>"$LOG_FILE" 2>&1 || fail "Node installer failed. Check journalctl -u hpanel-agent -n 30"
+  fi
+  step_end ok
+
+  step_begin
+  # 15. Local node enrollment
+  if [[ $DRY_RUN == true ]]; then
+    log "[dry-run] would register local node: php artisan hpanel:register-local-node --name=$NODE_NAME --public-ip=$NODE_PUBLIC_IPS --agent-url=https://127.0.0.1:8443"
+  else
+    if [[ -f /etc/panel-agent/config.yaml ]]; then
+      AGENT_HMAC_SECRET=$(grep -o '"hmac_secret": *"[^"]*"' /etc/panel-agent/config.yaml 2>/dev/null | cut -d'"' -f4 || true)
+      if [[ -n "$AGENT_HMAC_SECRET" ]]; then
+        set_env PANEL_AGENT_HMAC_SECRET "$AGENT_HMAC_SECRET"
+        artisan config:clear || true
+      fi
+    fi
+
+    DETECTED_PRIVATE_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7}' | tr -d '[:space:]' || hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
+
+    artisan hpanel:register-local-node \
+      --name="$NODE_NAME" \
+      --public-ip="$NODE_PUBLIC_IPS" \
+      --agent-url="https://127.0.0.1:8443" \
+      --private-ip="$DETECTED_PRIVATE_IP" || fail "Failed to register local node with the panel."
+  fi
+  NODE_STATUS="installed and enrolled"
+  step_end ok
+fi
 
 print_summary

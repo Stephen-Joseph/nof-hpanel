@@ -18,7 +18,8 @@ NC='\033[0m' # No Color
 DRY_RUN=false
 PANEL_URL="${PANEL_URL:-}"
 ENROLLMENT_TOKEN="${ENROLLMENT_TOKEN:-}"
-NODE_NAME="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo "node")"
+NODE_NAME="${NODE_NAME:-$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo "node")}"
+NODE_PUBLIC_IP="${NODE_PUBLIC_IP:-}"
 LOCATION="${LOCATION:-DEFAULT}"
 PRIVATE_IP="${PRIVATE_IP:-}"
 PANEL_IP="${PANEL_IP:-}"
@@ -54,6 +55,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --node-name)
             NODE_NAME="$2"
+            shift 2
+            ;;
+        --public-ip)
+            NODE_PUBLIC_IP="$2"
             shift 2
             ;;
         --private-ip)
@@ -209,10 +214,9 @@ execute systemctl enable --now quota.service || true
 # Non-negotiable security: port 8443 opened ONLY to PANEL_IP, never to 0.0.0.0/0
 if [ "$SKIP_FIREWALL" = false ]; then
     echo -e "${BLUE}[5/8] Configuring UFW firewall rules...${NC}"
-    execute ufw --force reset
     execute ufw default deny incoming
     execute ufw default allow outgoing
-    execute ufw allow 22/tcp comment 'SSH'
+    execute ufw allow "${SSH_PORT:-22}/tcp" comment 'SSH'
     execute ufw allow 80/tcp comment 'HTTP'
     execute ufw allow 443/tcp comment 'HTTPS'
 

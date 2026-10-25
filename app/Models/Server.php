@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string $hostname
  * @property string $private_ip
+ * @property string|null $public_ip
  * @property string $agent_url
  * @property ServerStatus $status
  * @property string|null $agent_public_cert_fingerprint
@@ -35,6 +36,7 @@ use Illuminate\Support\Carbon;
     'name',
     'hostname',
     'private_ip',
+    'public_ip',
     'agent_url',
     'status',
     'agent_public_cert_fingerprint',
