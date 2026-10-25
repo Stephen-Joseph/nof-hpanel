@@ -5,6 +5,8 @@
 # ==============================================================================
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 # Text formatting
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -14,15 +16,15 @@ NC='\033[0m' # No Color
 
 # Defaults
 DRY_RUN=false
-PANEL_URL=""
-ENROLLMENT_TOKEN=""
-NODE_NAME="$(hostname -f 2>/dev/null || hostname)"
-LOCATION="DEFAULT"
-PRIVATE_IP=""
+PANEL_URL="${PANEL_URL:-}"
+ENROLLMENT_TOKEN="${ENROLLMENT_TOKEN:-}"
+NODE_NAME="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo "node")"
+LOCATION="${LOCATION:-DEFAULT}"
+PRIVATE_IP="${PRIVATE_IP:-}"
+PANEL_IP="${PANEL_IP:-}"
 AGENT_PORT=8443
+AGENT_LISTEN="${AGENT_LISTEN:-127.0.0.1:8443}"
 SKIP_FIREWALL=false
-AGENT_VERSION="0.1.0"
-AGENT_BIN_PATH="/usr/local/bin/panel-agent"
 CONFIG_DIR="/etc/panel-agent"
 CERTS_DIR="/etc/panel-agent/certs"
 LOGS_DIR="/var/log/panel-agent"
@@ -58,12 +60,21 @@ while [[ $# -gt 0 ]]; do
             PRIVATE_IP="$2"
             shift 2
             ;;
+        --panel-ip)
+            PANEL_IP="$2"
+            shift 2
+            ;;
+        --listen)
+            AGENT_LISTEN="$2"
+            shift 2
+            ;;
         --location)
             LOCATION="$2"
             shift 2
             ;;
         --agent-port)
             AGENT_PORT="$2"
+            AGENT_LISTEN="127.0.0.1:${AGENT_PORT}"
             shift 2
             ;;
         --skip-firewall)
@@ -78,6 +89,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --enrollment-token TOK  One-time server enrollment token generated from panel"
             echo "  --node-name NAME        Custom node name identifier (default: hostname)"
             echo "  --private-ip IP         WireGuard / private interface IP for agent binding"
+            echo "  --panel-ip IP           Panel server IP allowed to reach agent port 8443"
+            echo "  --listen ADDR:PORT      Listen address for agent (default: 127.0.0.1:8443)"
             echo "  --location REGION       Geographic / datacenter location tag (e.g. LON-1, NYC-1)"
             echo "  --agent-port PORT       Port for agent service (default: 8443)"
             echo "  --skip-firewall         Skip UFW configuration"
@@ -108,9 +121,9 @@ fi
 
 # Detect OS
 if [ -f /etc/os-release ]; then
+    # shellcheck disable=SC1091
     . /etc/os-release
     OS=$ID
-    VERSION_ID=${VERSION_ID:-""}
 else
     echo -e "${RED}Error: Cannot identify Linux distribution via /etc/os-release.${NC}"
     exit 1
@@ -121,11 +134,11 @@ if [[ "$OS" != "ubuntu" && "$OS" != "debian" ]]; then
     exit 1
 fi
 
-echo -e "${GREEN}✓ Operating System verified: $PRETTY_NAME${NC}"
+echo -e "${GREEN}✓ Operating System verified: ${PRETTY_NAME:-$OS}${NC}"
 
 # Detect Private IP if not provided
 if [ -z "$PRIVATE_IP" ]; then
-    PRIVATE_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7}' | tr -d '[:space:]' || hostname -I | awk '{print $1}')
+    PRIVATE_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7}' | tr -d '[:space:]' || hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
     echo -e "${YELLOW}Private IP auto-detected: ${PRIVATE_IP}${NC}"
 fi
 
@@ -133,17 +146,23 @@ fi
 echo -e "${BLUE}[2/8] Configuring package repositories (PHP PPA, MariaDB)...${NC}"
 
 execute apt-get update -y
-execute apt-get install -y lsb-release ca-certificates apt-transport-https software-properties-common gnupg curl jq ufw fail2ban restic quota quotatool
 
-if [ "$OS" == "ubuntu" ]; then
+# Debian 12/13 does not have software-properties-common; install it only on Ubuntu
+if [ "$OS" = "ubuntu" ]; then
+    execute apt-get install -y lsb-release ca-certificates apt-transport-https software-properties-common gnupg curl jq ufw fail2ban restic quota quotatool
     execute add-apt-repository -y ppa:ondrej/php
     execute add-apt-repository -y ppa:ondrej/nginx-mainline
-elif [ "$OS" == "debian" ]; then
+elif [ "$OS" = "debian" ]; then
+    execute apt-get install -y lsb-release ca-certificates apt-transport-https gnupg curl jq ufw fail2ban restic quota quotatool
     if [ ! -f /etc/apt/trusted.gpg.d/php.gpg ]; then
-        curl -sSLo /tmp/debsury.gpg https://packages.sury.org/php/apt.gpg
-        execute gpg --dearmor -o /etc/apt/trusted.gpg.d/php.gpg /tmp/debsury.gpg
-        execute rm -f /tmp/debsury.gpg
-        echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" | execute tee /etc/apt/sources.list.d/sury-php.list
+        if [ "$DRY_RUN" = false ]; then
+            curl -sSLo /tmp/debsury.gpg https://packages.sury.org/php/apt.gpg
+            gpg --dearmor -o /etc/apt/trusted.gpg.d/php.gpg /tmp/debsury.gpg
+            rm -f /tmp/debsury.gpg
+            echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/sury-php.list
+        else
+            echo -e "${YELLOW}[DRY-RUN] Would configure Debian Sury PHP repository${NC}"
+        fi
     fi
 fi
 
@@ -187,6 +206,7 @@ echo -e "${BLUE}[4/8] Initializing disk quota subsystem...${NC}"
 execute systemctl enable --now quota.service || true
 
 # 5. Configuring UFW Firewall
+# Non-negotiable security: port 8443 opened ONLY to PANEL_IP, never to 0.0.0.0/0
 if [ "$SKIP_FIREWALL" = false ]; then
     echo -e "${BLUE}[5/8] Configuring UFW firewall rules...${NC}"
     execute ufw --force reset
@@ -195,11 +215,16 @@ if [ "$SKIP_FIREWALL" = false ]; then
     execute ufw allow 22/tcp comment 'SSH'
     execute ufw allow 80/tcp comment 'HTTP'
     execute ufw allow 443/tcp comment 'HTTPS'
-    
-    # Restrict agent port to private subnet / IP if possible
-    execute ufw allow from "$PRIVATE_IP/24" to any port "$AGENT_PORT" proto tcp comment 'HPanel Agent Private'
+
+    if [ -n "$PANEL_IP" ]; then
+        execute ufw allow from "$PANEL_IP" to any port 8443 proto tcp comment 'HPanel Agent to Panel'
+        echo -e "${GREEN}✓ Firewall rule added: port 8443 allowed from PANEL_IP (${PANEL_IP})${NC}"
+    else
+        echo -e "${YELLOW}Notice: PANEL_IP not set; port 8443 not opened in UFW. Agent binds securely to private/local interface.${NC}"
+    fi
+
     execute ufw --force enable
-    echo -e "${GREEN}✓ Firewall configured (ports 22, 80, 443 public; agent on private subnet).${NC}"
+    echo -e "${GREEN}✓ Firewall configured.${NC}"
 else
     echo -e "${YELLOW}[5/8] Skipping UFW firewall configuration (--skip-firewall specified).${NC}"
 fi
@@ -209,9 +234,110 @@ echo -e "${BLUE}[6/8] Establishing Agent file structure...${NC}"
 execute mkdir -p "$CONFIG_DIR" "$CERTS_DIR" "$LOGS_DIR" "$DATA_DIR" "/home"
 execute chmod 750 "$CONFIG_DIR" "$CERTS_DIR" "$LOGS_DIR" "$DATA_DIR"
 
-# 7. Installing and Hardening Agent Systemd Service
-echo -e "${BLUE}[7/8] Configuring systemd service...${NC}"
+# Ensure certificates exist (generate CA and server certificates if missing)
+if [ ! -f "${CERTS_DIR}/panel-ca.crt" ]; then
+    if [ "$DRY_RUN" = false ]; then
+        openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
+            -keyout "${CERTS_DIR}/panel-ca.key" \
+            -out "${CERTS_DIR}/panel-ca.crt" \
+            -subj "/CN=HPanel-Internal-CA"
+        chmod 600 "${CERTS_DIR}/panel-ca.key"
+        chmod 644 "${CERTS_DIR}/panel-ca.crt"
+    fi
+fi
 
+if [ ! -f "${CERTS_DIR}/server.crt" ]; then
+    if [ "$DRY_RUN" = false ]; then
+        openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
+            -keyout "${CERTS_DIR}/server.key" \
+            -out "${CERTS_DIR}/server.crt" \
+            -subj "/CN=${NODE_NAME}" \
+            -addext "subjectAltName=IP:${PRIVATE_IP},IP:127.0.0.1,DNS:${NODE_NAME}"
+        chmod 600 "${CERTS_DIR}/server.key"
+        chmod 644 "${CERTS_DIR}/server.crt"
+    fi
+fi
+
+# Write /etc/panel-agent/config.yaml (JSON format as loader requires) ONLY if it does not exist
+CONFIG_FILE="${CONFIG_DIR}/config.yaml"
+if [ ! -f "$CONFIG_FILE" ]; then
+    HMAC_SECRET=$(openssl rand -hex 32)
+    if [ "$DRY_RUN" = false ]; then
+        cat << EOF > "$CONFIG_FILE"
+{
+  "server": {
+    "listen_address": "${AGENT_LISTEN}",
+    "tls_cert_file": "${CERTS_DIR}/server.crt",
+    "tls_key_file": "${CERTS_DIR}/server.key",
+    "client_ca_file": "${CERTS_DIR}/panel-ca.crt"
+  },
+  "auth": {
+    "hmac_secret": "${HMAC_SECRET}",
+    "max_timestamp_skew_seconds": 60,
+    "nonce_ring_file": "/var/lib/panel-agent/nonces.dat"
+  },
+  "logging": {
+    "log_file": "/var/log/panel-agent/agent.log",
+    "level": "info",
+    "format": "json"
+  },
+  "system": {
+    "temp_dir": "/tmp/panel-agent"
+  }
+}
+EOF
+        chmod 600 "$CONFIG_FILE"
+    else
+        echo -e "${YELLOW}[DRY-RUN] Would create ${CONFIG_FILE} with generated HMAC secret${NC}"
+    fi
+fi
+
+# Print secret path ONLY (never the secret itself)
+echo "HMAC Secret Configuration: ${CONFIG_FILE}"
+
+# 7. Build and Install Agent Binary & Systemd Service
+echo -e "${BLUE}[7/8] Building and configuring panel-agent binary and systemd service...${NC}"
+
+# Check or install Go if missing
+if ! command -v go >/dev/null 2>&1; then
+    echo -e "${YELLOW}Go binary not detected in PATH. Installing Go toolchain...${NC}"
+    GO_MOD_PATH="${SCRIPT_DIR}/agent/go.mod"
+    GO_VERSION="1.24.4"
+    if [ -f "$GO_MOD_PATH" ]; then
+        MOD_VER=$(awk '/^go /{print $2}' "$GO_MOD_PATH" | tr -d '[:space:]')
+        if [ -n "$MOD_VER" ]; then
+            GO_VERSION="${MOD_VER}"
+            if [[ "$GO_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
+                GO_VERSION="${GO_VERSION}.0"
+            fi
+        fi
+    fi
+    ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
+    case "$ARCH" in
+        x86_64|amd64) GO_ARCH="amd64" ;;
+        aarch64|arm64) GO_ARCH="arm64" ;;
+        *) GO_ARCH="amd64" ;;
+    esac
+    GO_TAR="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
+    echo "Downloading https://go.dev/dl/${GO_TAR}..."
+    curl -fsSL "https://go.dev/dl/${GO_TAR}" -o "/tmp/${GO_TAR}"
+    rm -rf /usr/local/go
+    tar -C /usr/local -xzf "/tmp/${GO_TAR}"
+    rm -f "/tmp/${GO_TAR}"
+    export PATH="/usr/local/go/bin:${PATH}"
+fi
+
+# Build agent static binary
+if [ -d "${SCRIPT_DIR}/agent" ]; then
+    (
+        cd "${SCRIPT_DIR}/agent"
+        execute go build -o /usr/local/bin/panel-agent ./cmd/agent
+    )
+    execute chmod 755 /usr/local/bin/panel-agent
+    execute /usr/local/bin/panel-agent -version
+fi
+
+# Configure systemd service
 cat << 'EOF' > /tmp/hpanel-agent.service
 [Unit]
 Description=HPanel Server Node Agent
@@ -241,62 +367,66 @@ EOF
 execute cp /tmp/hpanel-agent.service /etc/systemd/system/hpanel-agent.service
 execute rm -f /tmp/hpanel-agent.service
 execute systemctl daemon-reload
+execute systemctl enable --now hpanel-agent.service
 
-# 8. Node Enrollment Call
-if [ -n "$PANEL_URL" ] && [ -n "$ENROLLMENT_TOKEN" ]; then
-    echo -e "${BLUE}[8/8] Enrolling node with HPanel Controller (${PANEL_URL})...${NC}"
-
-    if [ "$DRY_RUN" = false ]; then
-        # Generate self-signed agent TLS certificates for initial bootstrap if not present
-        if [ ! -f "${CERTS_DIR}/server.crt" ]; then
-            openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
-                -keyout "${CERTS_DIR}/server.key" \
-                -out "${CERTS_DIR}/server.crt" \
-                -subj "/CN=${NODE_NAME}" \
-                -addext "subjectAltName=IP:${PRIVATE_IP},DNS:${NODE_NAME}"
-            chmod 600 "${CERTS_DIR}/server.key"
-            chmod 644 "${CERTS_DIR}/server.crt"
-        fi
-
-        AGENT_CA_CERT=$(cat "${CERTS_DIR}/server.crt")
-
-        ENROLL_PAYLOAD=$(jq -n \
-            --arg token "$ENROLLMENT_TOKEN" \
-            --arg name "$NODE_NAME" \
-            --arg ip "$PRIVATE_IP" \
-            --argjson port "$AGENT_PORT" \
-            --arg loc "$LOCATION" \
-            --arg ca "$AGENT_CA_CERT" \
-            '{token: $token, name: $name, ip_address: $ip, agent_port: $port, location: $loc, max_accounts: 150, agent_ca_cert: $ca}')
-
-        HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${PANEL_URL}/api/v1/servers/enroll" \
-            -H "Content-Type: application/json" \
-            -H "Accept: application/json" \
-            -d "$ENROLL_PAYLOAD" || echo "FAILED")
-
-        HTTP_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
-        HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
-
-        if [ "$HTTP_CODE" == "200" ] || [ "$HTTP_CODE" == "201" ]; then
-            echo -e "${GREEN}✓ Node successfully registered with Controller! Response: ${HTTP_BODY}${NC}"
-        else
-            echo -e "${YELLOW}Warning: Node enrollment returned HTTP ${HTTP_CODE}: ${HTTP_BODY}${NC}"
-            echo -e "${YELLOW}You can complete manual enrollment from the Panel UI at any time.${NC}"
-        fi
-    else
-        echo -e "${YELLOW}[DRY-RUN] Would submit enrollment request to: ${PANEL_URL}/api/v1/servers/enroll${NC}"
+# Verify service is active and listening
+if [ "$DRY_RUN" = false ]; then
+    sleep 2
+    if ! systemctl is-active --quiet hpanel-agent; then
+        echo -e "${RED}Error: hpanel-agent service failed to start or is inactive.${NC}" >&2
+        journalctl -u hpanel-agent -n 30 --no-pager >&2 || true
+        exit 1
     fi
-else
-    echo -e "${YELLOW}[8/8] No --panel-url or --enrollment-token provided. Skipping automatic enrollment.${NC}"
+
+    LISTEN_PORT="${AGENT_LISTEN##*:}"
+    if ! (ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null) | grep -q ":${LISTEN_PORT} "; then
+        echo -e "${RED}Error: Agent port ${LISTEN_PORT} is not listening.${NC}" >&2
+        journalctl -u hpanel-agent -n 30 --no-pager >&2 || true
+        exit 1
+    fi
+    echo -e "${GREEN}✓ hpanel-agent is active and listening on ${AGENT_LISTEN}.${NC}"
 fi
 
-echo -e "${GREEN}"
-echo "=============================================================="
-echo "          HPANEL NODE SETUP COMPLETED SUCCESSFULLY            "
-echo "=============================================================="
-echo -e "${NC}"
-echo "Agent Directory:   $CONFIG_DIR"
-echo "Systemd Unit:      hpanel-agent.service"
-echo "Status Check:      systemctl status hpanel-agent"
-echo "Metrics Endpoint:  http://${PRIVATE_IP}:${AGENT_PORT}/metrics"
+# 8. Node Enrollment Call
+ENROLL_SCRIPT="${SCRIPT_DIR}/deploy/enroll.sh"
+if [ -n "$PANEL_URL" ] && [ -n "$ENROLLMENT_TOKEN" ]; then
+    echo -e "${BLUE}[8/8] Enrolling node with HPanel Controller (${PANEL_URL})...${NC}"
+    if [ "$DRY_RUN" = true ]; then
+        "$ENROLL_SCRIPT" --dry-run \
+            --panel-url "$PANEL_URL" \
+            --token "$ENROLLMENT_TOKEN" \
+            --hostname "$NODE_NAME" \
+            --private-ip "$PRIVATE_IP" \
+            --location "$LOCATION"
+    else
+        "$ENROLL_SCRIPT" \
+            --panel-url "$PANEL_URL" \
+            --token "$ENROLLMENT_TOKEN" \
+            --hostname "$NODE_NAME" \
+            --private-ip "$PRIVATE_IP" \
+            --location "$LOCATION"
+    fi
 
+    echo -e "${GREEN}"
+    echo "=============================================================="
+    echo "          HPANEL NODE SETUP COMPLETED SUCCESSFULLY            "
+    echo "=============================================================="
+    echo -e "${NC}"
+    echo "Agent Config:      $CONFIG_FILE"
+    echo "Systemd Unit:      hpanel-agent.service"
+    echo "Status Check:      systemctl status hpanel-agent"
+else
+    echo -e "${YELLOW}"
+    echo "=============================================================="
+    echo "       HPANEL NODE STATUS: INSTALLED, NOT ENROLLED            "
+    echo "=============================================================="
+    echo -e "${NC}"
+    echo "Agent service is installed and running, but has not enrolled."
+    echo "To enroll this node with the HPanel controller, run:"
+    echo ""
+    echo "  ${ENROLL_SCRIPT} --panel-url <PANEL_URL> --token <ENROLLMENT_TOKEN>"
+    echo ""
+    echo "Agent Config:      $CONFIG_FILE"
+    echo "Systemd Unit:      hpanel-agent.service"
+    echo "Status Check:      systemctl status hpanel-agent"
+fi

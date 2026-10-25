@@ -110,4 +110,3 @@ func (a *FileReadAction) Execute(ctx context.Context, payload []byte, dryRun boo
 		Logs: logs,
 	}, nil
 }
-

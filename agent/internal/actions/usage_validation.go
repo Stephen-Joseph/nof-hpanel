@@ -18,7 +18,7 @@ func ValidateUsageCollectRequest(username string, domains []string, databases []
 	}
 
 	for _, db := range databases {
-		if err := ValidateDatabaseName(db); err != nil {
+		if err := ValidateDatabaseName(username, db); err != nil {
 			return fmt.Errorf("invalid database name '%s' in usage collection: %w", db, err)
 		}
 	}
@@ -33,4 +33,3 @@ func ValidateLogOffset(offset int64) error {
 	}
 	return nil
 }
-

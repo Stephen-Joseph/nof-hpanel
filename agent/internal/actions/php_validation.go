@@ -89,4 +89,3 @@ func ParseMemoryToMB(val string) int {
 	}
 	return 256
 }
-

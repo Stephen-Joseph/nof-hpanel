@@ -74,4 +74,3 @@ func TestHtpasswdWriteAndValidate(t *testing.T) {
 		t.Fatalf("delete execute dry-run failed: %v, res: %+v", err, delRes)
 	}
 }
-

@@ -134,19 +134,18 @@ class ProvisionAccount implements ShouldQueue
                 $this->account->transitionTo(AccountStatus::FAILED, $err);
             }
         } catch (Throwable $e) {
-            $agentJob->recordLog('Provisioning error: '.$e->getMessage(), 'error');
+            $err = \Illuminate\Support\Str::limit($e->getMessage(), 500, '');
+            $agentJob->recordLog('Provisioning error: '.$err, 'error');
             
             $currentStep = $agentJob->provisioningSteps()->where('status', 'running')->first() 
                 ?? $agentJob->provisioningSteps()->where('status', 'pending')->first();
-            $currentStep?->markFailed($e->getMessage());
+            $currentStep?->markFailed($err);
 
-            $agentJob->markFailed($e->getMessage());
+            $agentJob->markFailed($err);
 
             if ($this->account->canTransitionTo(AccountStatus::FAILED)) {
-                $this->account->transitionTo(AccountStatus::FAILED, $e->getMessage());
+                $this->account->transitionTo(AccountStatus::FAILED, $err);
             }
-
-            throw $e;
         }
     }
 

@@ -108,4 +108,3 @@ func RenderPhpPoolConfig(data PhpPoolTemplateData) (string, error) {
 
 	return buf.String(), nil
 }
-

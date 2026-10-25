@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"time"
 )
 
 // -------------------------------------------------------------
@@ -113,10 +112,10 @@ func (a *CronWriteAction) Execute(ctx context.Context, payload []byte, dryRun bo
 		return &ActionResult{
 			Success: true,
 			Data: map[string]any{
-				"username":        p.Username,
+				"username":         p.Username,
 				"active_job_count": len(activeJobs),
 				"rendered_crontab": crontabContent,
-				"dry_run":         true,
+				"dry_run":          true,
 			},
 			Logs: logs,
 		}, nil
@@ -131,7 +130,7 @@ func (a *CronWriteAction) Execute(ctx context.Context, payload []byte, dryRun bo
 		return &ActionResult{
 			Success: true,
 			Data: map[string]any{
-				"username":        p.Username,
+				"username":         p.Username,
 				"active_job_count": 0,
 			},
 			Logs: logs,
@@ -168,7 +167,7 @@ func (a *CronWriteAction) Execute(ctx context.Context, payload []byte, dryRun bo
 	return &ActionResult{
 		Success: true,
 		Data: map[string]any{
-			"username":        p.Username,
+			"username":         p.Username,
 			"active_job_count": len(activeJobs),
 		},
 		Logs: logs,
@@ -262,4 +261,3 @@ func (a *CronListAction) Execute(ctx context.Context, payload []byte, dryRun boo
 		Logs: logs,
 	}, nil
 }
-

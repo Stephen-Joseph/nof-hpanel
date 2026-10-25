@@ -149,4 +149,3 @@ func TestPhpListAndStatusActionsDryRun(t *testing.T) {
 		t.Fatalf("fpm status failed: %v (%v)", err, statusRes.Error)
 	}
 }
-

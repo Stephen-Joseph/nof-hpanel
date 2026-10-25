@@ -76,9 +76,13 @@ func ValidateLinuxUsername(username string) error {
 
 // ValidateDomain ensures domain is RFC-compliant lowercase.
 func ValidateDomain(domain string) error {
-	domain = strings.TrimSpace(strings.ToLower(domain))
+	domain = strings.TrimSpace(domain)
 	if domain == "" {
 		return errors.New("domain cannot be empty")
+	}
+
+	if strings.ToLower(domain) != domain {
+		return fmt.Errorf("domain '%s' must be strictly lowercase", domain)
 	}
 
 	if len(domain) > 253 {
@@ -105,4 +109,3 @@ func ValidatePHPVersion(version string) error {
 
 	return nil
 }
-

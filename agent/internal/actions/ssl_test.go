@@ -184,4 +184,3 @@ func TestSslRenewAndRevokeDryRun(t *testing.T) {
 		t.Fatalf("revoke execute failed: %v (%v)", err, revokeRes.Error)
 	}
 }
-

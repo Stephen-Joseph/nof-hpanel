@@ -140,4 +140,3 @@ func RemoveAuthorizedKeyByBlob(username, blob string) error {
 
 	return os.WriteFile(authKeysFile, []byte(content), 0600)
 }
-

@@ -43,4 +43,3 @@ func ValidateLogFile(username string, logFilename string) (string, error) {
 
 	return cleanPath, nil
 }
-

@@ -78,4 +78,3 @@ func ValidateWwwRedirect(mode string) error {
 
 	return nil
 }
-

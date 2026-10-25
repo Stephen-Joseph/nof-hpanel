@@ -9,4 +9,3 @@ func TestVersionIsSet(t *testing.T) {
 		t.Fatal("expected Version to be non-empty")
 	}
 }
-

@@ -66,7 +66,7 @@ func TestValidateDeployPath(t *testing.T) {
 	}{
 		{"alicecorp", "/home/alicecorp/deployments/app", false},
 		{"alicecorp", "/home/alicecorp/public_html", false},
-		{"alicecorp", "/home/alicecorp", true}, // cannot deploy directly to user root
+		{"alicecorp", "/home/alicecorp", true},   // cannot deploy directly to user root
 		{"alicecorp", "/home/bobcorp/app", true}, // outside user home
 		{"alicecorp", "/var/www/html", true},
 		{"invalid-user!", "/home/invalid-user!/app", true},
@@ -140,4 +140,3 @@ func TestGitDeployAndRollbackDryRun(t *testing.T) {
 		t.Fatalf("rollback execute failed: %v, res: %+v", err, rbRes)
 	}
 }
-

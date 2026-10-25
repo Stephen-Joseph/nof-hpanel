@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-const fpmPoolTemplate = `; PHP-FPM Pool Configuration for [{{.Username}}]
+const accountCreateFpmPoolTemplate = `; PHP-FPM Pool Configuration for [{{.Username}}]
 [{{.Username}}]
 user = {{.Username}}
 group = {{.Username}}
@@ -40,7 +40,7 @@ php_admin_flag[log_errors] = on
 php_admin_value[error_log] = /home/{{.Username}}/logs/php_error.log
 `
 
-const nginxVhostTemplate = `server {
+const accountCreateNginxVhostTemplate = `server {
     listen 80;
     listen [::]:80;
     server_name {{.PrimaryDomain}};
@@ -170,7 +170,7 @@ func (a *AccountCreateAction) Validate(payload []byte) error {
 }
 
 func (a *AccountCreateAction) RenderPoolConfig(p AccountCreatePayload) (string, error) {
-	tmpl, err := template.New("pool").Parse(fpmPoolTemplate)
+	tmpl, err := template.New("pool").Parse(accountCreateFpmPoolTemplate)
 	if err != nil {
 		return "", err
 	}
@@ -182,7 +182,7 @@ func (a *AccountCreateAction) RenderPoolConfig(p AccountCreatePayload) (string, 
 }
 
 func (a *AccountCreateAction) renderVhostConfig(p AccountCreatePayload) (string, error) {
-	tmpl, err := template.New("vhost").Parse(nginxVhostTemplate)
+	tmpl, err := template.New("vhost").Parse(accountCreateNginxVhostTemplate)
 	if err != nil {
 		return "", err
 	}
@@ -431,7 +431,12 @@ func (a *AccountCreateAction) deployFpmPool(ctx context.Context, p AccountCreate
 }
 
 func (a *AccountCreateAction) resolveFpmBinary(version string) (string, error) {
-	candidates := []string{fmt.Sprintf("php-fpm%s", version), fmt.Sprintf("php-fpm%s", strings.ReplaceAll(version, ".", ""))}
+	candidates := []string{
+		fmt.Sprintf("php-fpm%s", version),
+		fmt.Sprintf("/usr/sbin/php-fpm%s", version),
+		fmt.Sprintf("php-fpm%s", strings.ReplaceAll(version, ".", "")),
+		fmt.Sprintf("/usr/sbin/php-fpm%s", strings.ReplaceAll(version, ".", "")),
+	}
 	for _, candidate := range candidates {
 		if _, err := a.executor.LookPath(candidate); err == nil {
 			return candidate, nil

@@ -306,4 +306,3 @@ func (a *FileChmodAction) Execute(ctx context.Context, payload []byte, dryRun bo
 		Logs: logs,
 	}, nil
 }
-

@@ -48,7 +48,7 @@ const nginxVhostTemplate = `# HPanel Virtual Host Configuration
 {{.WwwRedirectBlock}}
 {{end}}
 
-{{if and .SSLEnabled .ForceHTTPS}}
+{{if .ForceHTTPS}}
 server {
     listen 80;
     listen [::]:80;
@@ -114,7 +114,7 @@ server {
 {{end}}
 
     root {{.DocumentRoot}};
-    index index.php index.html index.htm;
+    index {{if eq .AppProfile "static-spa"}}index.html index.htm{{else}}index.php index.html index.htm{{end}};
 
     # Per-account log isolation
     access_log /home/{{.Username}}/logs/{{.Domain}}_access.log;
@@ -340,4 +340,3 @@ func RenderVhostConfig(data VhostTemplateData) (string, error) {
 
 	return buf.String(), nil
 }
-

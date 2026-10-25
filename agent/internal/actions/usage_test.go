@@ -140,4 +140,3 @@ func TestUsageCollectActionDryRun(t *testing.T) {
 		t.Errorf("expected positive bandwidth_bytes_total, got %v", data["bandwidth_bytes_total"])
 	}
 }
-

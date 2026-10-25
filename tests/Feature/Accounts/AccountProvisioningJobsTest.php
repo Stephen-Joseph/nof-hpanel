@@ -188,3 +188,104 @@ test('TerminateAccount sends confirmation token and purges account', function ()
         'target_id' => $this->account->id,
     ]);
 });
+
+test('ProvisionAccount job handles 422 agent response and transitions to failed without escaping exception', function () {
+    Http::fake([
+        'https://10.0.0.50:8443/action' => Http::response([
+            'request_id' => 'req-prov-422',
+            'action' => 'account.create',
+            'success' => false,
+            'error' => 'validation failed: storage_mb must be greater than 0',
+        ], 422),
+    ]);
+
+    expect($this->account->status)->toBe(AccountStatus::PENDING);
+
+    $job = new ProvisionAccount($this->account);
+    // Assert no exception escapes
+    $job->handle($this->client, $this->audit);
+
+    $this->account->refresh();
+
+    expect($this->account->status)->toBe(AccountStatus::FAILED)
+        ->and($this->account->suspended_reason)->toContain('validation failed: storage_mb must be greater than 0');
+
+    $this->assertDatabaseHas('agent_jobs', [
+        'account_id' => $this->account->id,
+        'action' => 'account.create',
+        'status' => AgentJobStatus::FAILED->value,
+    ]);
+});
+
+test('ProvisionAccount job handles 500 agent step failure and transitions to failed without escaping exception', function () {
+    Http::fake([
+        'https://10.0.0.50:8443/action' => Http::response([
+            'request_id' => 'req-prov-500',
+            'action' => 'account.create',
+            'success' => false,
+            'error' => "step 'create_user' failed: useradd exited with status 1",
+        ], 500),
+    ]);
+
+    expect($this->account->status)->toBe(AccountStatus::PENDING);
+
+    $job = new ProvisionAccount($this->account);
+    // Assert no exception escapes
+    $job->handle($this->client, $this->audit);
+
+    $this->account->refresh();
+
+    expect($this->account->status)->toBe(AccountStatus::FAILED)
+        ->and($this->account->suspended_reason)->toContain("step 'create_user' failed");
+
+    $this->assertDatabaseHas('agent_jobs', [
+        'account_id' => $this->account->id,
+        'action' => 'account.create',
+        'status' => AgentJobStatus::FAILED->value,
+    ]);
+});
+
+test('failed provisioning leaves the account in FAILED without DomainException and can be terminated', function () {
+    expect($this->account->status)->toBe(AccountStatus::PENDING);
+
+    // Simulate direct failure
+    $this->account->transitionTo(AccountStatus::FAILED, 'Initial provisioning failure');
+    expect($this->account->status)->toBe(AccountStatus::FAILED);
+
+    // Terminating a pending or failed account should not throw DomainException
+    Http::fake([
+        'https://10.0.0.50:8443/action' => Http::response([
+            'request_id' => 'req-term-failed',
+            'action' => 'account.terminate',
+            'success' => true,
+            'data' => ['terminated' => true],
+            'logs' => ['cleaned up'],
+        ], 200),
+    ]);
+
+    $termJob = new TerminateAccount($this->account, false);
+    $termJob->handle($this->client, $this->audit);
+
+    $this->account->refresh();
+    expect($this->account->status)->toBe(AccountStatus::TERMINATED);
+});
+
+test('terminating a pending account transitions safely without DomainException', function () {
+    expect($this->account->status)->toBe(AccountStatus::PENDING);
+
+    Http::fake([
+        'https://10.0.0.50:8443/action' => Http::response([
+            'request_id' => 'req-term-pending',
+            'action' => 'account.terminate',
+            'success' => true,
+            'data' => ['terminated' => true],
+            'logs' => ['cleaned up'],
+        ], 200),
+    ]);
+
+    $termJob = new TerminateAccount($this->account, false);
+    $termJob->handle($this->client, $this->audit);
+
+    $this->account->refresh();
+    expect($this->account->status)->toBe(AccountStatus::TERMINATED);
+});

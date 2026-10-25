@@ -169,3 +169,10 @@ test('ping and health helpers invoke the expected actions', function () {
     expect($healthResult['success'])->toBeTrue()
         ->and($healthResult['data']['cpu_cores'])->toBe(8);
 });
+
+test('production environment refuses to execute with default or empty HMAC secret', function () {
+    app()->detectEnvironment(fn () => 'production');
+    config()->set('services.agent.secret', 'test-agent-secret-key-change-me');
+
+    $this->client->execute($this->server, 'system.ping');
+})->throws(\RuntimeException::class, 'PANEL_AGENT_HMAC_SECRET must be configured to a non-default value in production.');

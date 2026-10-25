@@ -232,4 +232,3 @@ func TestVhostRemoveAndReload(t *testing.T) {
 		t.Fatalf("reload dry-run failed: %v", err)
 	}
 }
-

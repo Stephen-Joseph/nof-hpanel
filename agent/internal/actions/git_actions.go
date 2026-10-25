@@ -299,4 +299,3 @@ func (a *GitRollbackAction) Execute(ctx context.Context, payload []byte, dryRun 
 		Logs: logs,
 	}, nil
 }
-

@@ -45,15 +45,22 @@ func ResolveSafePath(username, requestedPath string) (string, error) {
 		return realPath, nil
 	}
 
-	// If file doesn't exist yet, evaluate parent directory symlinks
+	// If candidate is homeDir itself and doesn't exist yet, return it
+	if candidatePath == homeDir {
+		return candidatePath, nil
+	}
+
+	// If file doesn't exist yet, evaluate parent directory symlinks if within home
 	parentDir := filepath.Dir(candidatePath)
-	realParent, parentErr := filepath.EvalSymlinks(parentDir)
-	if parentErr == nil {
-		realParent = filepath.Clean(realParent)
-		if realParent != homeDir && !strings.HasPrefix(realParent, homeDir+string(filepath.Separator)) {
-			return "", fmt.Errorf("parent directory symlink '%s' escapes home directory '%s'", realParent, homeDir)
+	if parentDir == homeDir || strings.HasPrefix(parentDir, homeDir+string(filepath.Separator)) {
+		realParent, parentErr := filepath.EvalSymlinks(parentDir)
+		if parentErr == nil {
+			realParent = filepath.Clean(realParent)
+			if realParent != homeDir && !strings.HasPrefix(realParent, homeDir+string(filepath.Separator)) {
+				return "", fmt.Errorf("parent directory symlink '%s' escapes home directory '%s'", realParent, homeDir)
+			}
+			return filepath.Join(realParent, filepath.Base(candidatePath)), nil
 		}
-		return filepath.Join(realParent, filepath.Base(candidatePath)), nil
 	}
 
 	// In test environments or when parent doesn't exist yet, return cleaned candidate if lexical check passed
@@ -112,4 +119,3 @@ func ExtractZipSafely(zipPath, destDir string) error {
 
 	return nil
 }
-

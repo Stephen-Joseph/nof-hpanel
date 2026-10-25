@@ -27,22 +27,22 @@ func (a *SystemHealthAction) Execute(ctx context.Context, payload []byte, dryRun
 	logs := []string{"collecting system health metrics"}
 
 	data := map[string]any{
-		"os":          runtime.GOOS,
-		"arch":        runtime.GOARCH,
-		"cpu_cores":   runtime.NumCPU(),
-		"goroutines":  runtime.NumGoroutine(),
-		"timestamp":   time.Now().Unix(),
-		"dry_run":     dryRun,
+		"os":         runtime.GOOS,
+		"arch":       runtime.GOARCH,
+		"cpu_cores":  runtime.NumCPU(),
+		"goroutines": runtime.NumGoroutine(),
+		"timestamp":  time.Now().Unix(),
+		"dry_run":    dryRun,
 	}
 
 	// 1. Memory stats
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	data["memory"] = map[string]any{
-		"alloc_bytes":      m.Alloc,
+		"alloc_bytes":       m.Alloc,
 		"total_alloc_bytes": m.TotalAlloc,
-		"sys_bytes":        m.Sys,
-		"num_gc":           m.NumGC,
+		"sys_bytes":         m.Sys,
+		"num_gc":            m.NumGC,
 	}
 
 	// 2. Load average (on Linux, parse /proc/loadavg)

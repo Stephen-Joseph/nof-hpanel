@@ -74,4 +74,3 @@ func ValidateRestoreRequest(username string, snapshotID string, restoreType stri
 
 	return nil
 }
-

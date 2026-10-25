@@ -17,7 +17,7 @@ import (
 
 type failingTestAction struct{}
 
-func (f failingTestAction) Name() string { return "test.fail" }
+func (f failingTestAction) Name() string                  { return "test.fail" }
 func (f failingTestAction) Validate(payload []byte) error { return nil }
 func (f failingTestAction) Execute(ctx context.Context, payload []byte, dryRun bool) (*actions.ActionResult, error) {
 	return &actions.ActionResult{

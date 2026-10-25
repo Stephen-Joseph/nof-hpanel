@@ -178,4 +178,3 @@ func TestFileActionsDryRun(t *testing.T) {
 		t.Fatalf("ssh.key_remove dry-run failed: %v", err)
 	}
 }
-

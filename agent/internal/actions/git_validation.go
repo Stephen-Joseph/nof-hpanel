@@ -95,4 +95,3 @@ func ValidateBuildSteps(steps []string) ([]string, error) {
 	}
 	return sanitized, nil
 }
-

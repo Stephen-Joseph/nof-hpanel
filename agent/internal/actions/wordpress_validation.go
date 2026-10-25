@@ -69,4 +69,3 @@ func ValidateWordPressInstallPath(username, installPath string) (string, error) 
 
 	return clean, nil
 }
-

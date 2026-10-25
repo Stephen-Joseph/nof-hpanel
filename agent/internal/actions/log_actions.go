@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -173,10 +172,10 @@ type LogListPayload struct {
 }
 
 type LogItem struct {
-	Name        string `json:"name"`
-	SizeBytes   int64  `json:"size_bytes"`
-	ModifiedAt  string `json:"modified_at"`
-	Category    string `json:"category"` // "access", "error", "php", "cron", "other"
+	Name       string `json:"name"`
+	SizeBytes  int64  `json:"size_bytes"`
+	ModifiedAt string `json:"modified_at"`
+	Category   string `json:"category"` // "access", "error", "php", "cron", "other"
 }
 
 type LogListAction struct{}
@@ -383,4 +382,3 @@ func (a *LogRotateAction) Execute(ctx context.Context, payload []byte, dryRun bo
 		Logs: logs,
 	}, nil
 }
-

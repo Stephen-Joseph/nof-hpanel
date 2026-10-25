@@ -8,10 +8,10 @@ import (
 
 func TestValidateLogFile(t *testing.T) {
 	tests := []struct {
-		name     string
-		user     string
-		file     string
-		wantErr  bool
+		name    string
+		user    string
+		file    string
+		wantErr bool
 	}{
 		{"valid domain access log", "alicecorp", "alicecorp.com.access.log", false},
 		{"valid domain error log", "alicecorp", "alicecorp.com.error.log", false},
@@ -77,4 +77,3 @@ func TestLogActionsDryRun(t *testing.T) {
 		t.Fatalf("LogRotate execute failed: %v, res: %+v", err, res)
 	}
 }
-

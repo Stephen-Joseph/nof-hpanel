@@ -89,7 +89,7 @@ func TestAccountCreateExecuteRealRunSuccessAndIdempotent(t *testing.T) {
 		},
 		combinedResult: map[string]fakeCommandResult{},
 		lookups: map[string]bool{
-			"setquota":    true,
+			"setquota":   true,
 			"php-fpm8.4": true,
 		},
 	}
@@ -238,7 +238,7 @@ func TestAccountCreateExecuteReturnsStepErrorOnSystemdSliceFailure(t *testing.T)
 			"systemctl daemon-reload": errors.New("daemon-reload failed"),
 		},
 		combinedResult: map[string]fakeCommandResult{},
-		lookups: map[string]bool{"php-fpm8.4": true},
+		lookups:        map[string]bool{"php-fpm8.4": true},
 	}
 	action := newTestAction(t, exec)
 

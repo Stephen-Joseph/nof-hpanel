@@ -116,4 +116,3 @@ func (a *AccountSuspendAction) Execute(ctx context.Context, payload []byte, dryR
 		Logs: logs,
 	}, nil
 }
-

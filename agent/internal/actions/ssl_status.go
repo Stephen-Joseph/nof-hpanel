@@ -122,4 +122,3 @@ func (a *SslStatusAction) Execute(ctx context.Context, payload []byte, dryRun bo
 		Logs: logs,
 	}, nil
 }
-

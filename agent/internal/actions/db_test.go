@@ -251,4 +251,3 @@ func TestDbActionsDryRun(t *testing.T) {
 		t.Fatalf("DbDrop execute failed: %v, res: %+v", err, res)
 	}
 }
-

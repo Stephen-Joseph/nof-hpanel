@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 )
 
 // -------------------------------------------------------------
@@ -73,10 +72,10 @@ func (a *WordpressInstallAction) Validate(payload []byte) error {
 			return err
 		}
 	}
-	if err := ValidateDatabaseName(p.DbName); err != nil {
+	if err := ValidateDatabaseName(p.Username, p.DbName); err != nil {
 		return err
 	}
-	if err := ValidateDatabaseUser(p.DbUser); err != nil {
+	if err := ValidateDatabaseUsername(p.Username, p.DbUser); err != nil {
 		return err
 	}
 
@@ -337,4 +336,3 @@ func (a *WordpressUninstallAction) Execute(ctx context.Context, payload []byte, 
 		Logs: logs,
 	}, nil
 }
-

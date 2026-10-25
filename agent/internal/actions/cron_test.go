@@ -107,4 +107,3 @@ func TestCronActionsDryRun(t *testing.T) {
 		t.Fatalf("CronList execute failed: %v, res: %+v", err, res)
 	}
 }
-

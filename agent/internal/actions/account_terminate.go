@@ -153,4 +153,3 @@ func (a *AccountTerminateAction) Execute(ctx context.Context, payload []byte, dr
 		Logs: logs,
 	}, nil
 }
-

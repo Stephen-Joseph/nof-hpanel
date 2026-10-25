@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 /**
  * @property int $id
@@ -386,7 +387,7 @@ class Account extends Model
 
         $attributes = ['status' => $newStatus];
         if ($reason !== null) {
-            $attributes['suspended_reason'] = $reason;
+            $attributes['suspended_reason'] = Str::limit($reason, 500, '');
         } elseif ($newStatus === AccountStatus::ACTIVE) {
             $attributes['suspended_reason'] = null;
         }

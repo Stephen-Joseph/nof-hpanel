@@ -160,4 +160,3 @@ func (a *SslIssueAction) Execute(ctx context.Context, payload []byte, dryRun boo
 		Logs: logs,
 	}, nil
 }
-

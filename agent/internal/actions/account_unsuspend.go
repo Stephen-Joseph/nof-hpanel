@@ -106,4 +106,3 @@ func (a *AccountUnsuspendAction) Execute(ctx context.Context, payload []byte, dr
 		Logs: logs,
 	}, nil
 }
-

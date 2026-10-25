@@ -115,4 +115,3 @@ func ParseCertificateBytes(certBytes []byte) (*ParsedCertInfo, error) {
 		IsExpired:     now.After(cert.NotAfter),
 	}, nil
 }
-

@@ -201,4 +201,3 @@ func (a *PhpPoolWriteAction) Execute(ctx context.Context, payload []byte, dryRun
 		Logs: logs,
 	}, nil
 }
-

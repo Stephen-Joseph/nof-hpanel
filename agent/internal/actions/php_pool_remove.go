@@ -100,4 +100,3 @@ func (a *PhpPoolRemoveAction) Execute(ctx context.Context, payload []byte, dryRu
 		Logs: logs,
 	}, nil
 }
-

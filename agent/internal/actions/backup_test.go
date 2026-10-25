@@ -132,4 +132,3 @@ func TestBackupActionsDryRun(t *testing.T) {
 		t.Fatalf("BackupDelete execution failed: %v, res: %+v", err, res)
 	}
 }
-

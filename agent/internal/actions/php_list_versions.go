@@ -51,7 +51,9 @@ func (a *PhpListVersionsAction) Execute(ctx context.Context, payload []byte, dry
 		binPath := fmt.Sprintf("/usr/bin/php%s", v)
 		fpmPath := fmt.Sprintf("/usr/sbin/php-fpm%s", v)
 
-		if _, err := os.Stat(binPath); err == nil || os.Stat(fpmPath) == nil {
+		_, binErr := os.Stat(binPath)
+		_, fpmErr := os.Stat(fpmPath)
+		if binErr == nil || fpmErr == nil {
 			installed = append(installed, v)
 
 			// Check systemd status
@@ -76,4 +78,3 @@ func (a *PhpListVersionsAction) Execute(ctx context.Context, payload []byte, dry
 		Logs: logs,
 	}, nil
 }
-

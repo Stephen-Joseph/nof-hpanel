@@ -92,4 +92,3 @@ func (a *PhpInstallVersionAction) Execute(ctx context.Context, payload []byte, d
 		Logs: logs,
 	}, nil
 }
-

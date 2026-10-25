@@ -148,4 +148,3 @@ func ValidateCronEmail(email string) error {
 
 	return nil
 }
-

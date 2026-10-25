@@ -86,4 +86,3 @@ func TestWordPressInstallAndUninstallDryRun(t *testing.T) {
 		t.Fatalf("uninstall execute failed: %v, res: %+v", err, unRes)
 	}
 }
-

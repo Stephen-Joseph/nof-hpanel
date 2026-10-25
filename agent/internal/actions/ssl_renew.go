@@ -117,4 +117,3 @@ func (a *SslRenewAction) Execute(ctx context.Context, payload []byte, dryRun boo
 		Logs: logs,
 	}, nil
 }
-

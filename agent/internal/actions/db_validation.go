@@ -147,4 +147,3 @@ func ValidatePrivileges(privileges []string) ([]string, error) {
 
 	return sanitized, nil
 }
-

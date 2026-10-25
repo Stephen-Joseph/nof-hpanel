@@ -201,4 +201,3 @@ func (a *SftpAccountCreateAction) Execute(ctx context.Context, payload []byte, d
 		Logs: logs,
 	}, nil
 }
-

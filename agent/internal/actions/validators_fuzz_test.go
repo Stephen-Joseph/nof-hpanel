@@ -8,29 +8,29 @@ import (
 // TestUsernameValidationFuzz tests aggressive malicious and malformed usernames against security regex.
 func TestUsernameValidationFuzz(t *testing.T) {
 	invalidUsernames := []string{
-		"",                          // empty
-		"ab",                        // too short (< 3)
-		"1user",                     // leading number
-		"-user",                     // leading symbol
-		"_user",                     // leading underscore
-		"User",                      // uppercase
-		"USER",                      // all uppercase
-		"user_name",                 // underscore not allowed in linux username regex
-		"user-name",                 // dash not allowed
-		"user name",                 // space
-		"user$name",                 // shell char
-		"user;rm -rf /",             // command injection
-		"user$(id)",                 // subshell injection
-		"user`whoami`",              // backtick injection
-		"user\x00injection",         // null byte injection
-		"../../etc/passwd",          // path traversal
-		"/root",                     // system user
-		"a1234567890123456",         // too long (17 chars, max 16)
+		"",                            // empty
+		"ab",                          // too short (< 3)
+		"1user",                       // leading number
+		"-user",                       // leading symbol
+		"_user",                       // leading underscore
+		"User",                        // uppercase
+		"USER",                        // all uppercase
+		"user_name",                   // underscore not allowed in linux username regex
+		"user-name",                   // dash not allowed
+		"user name",                   // space
+		"user$name",                   // shell char
+		"user;rm -rf /",               // command injection
+		"user$(id)",                   // subshell injection
+		"user`whoami`",                // backtick injection
+		"user\x00injection",           // null byte injection
+		"../../etc/passwd",            // path traversal
+		"/root",                       // system user
+		"a1234567890123456",           // too long (17 chars, max 16)
 		"verylongusernamethatexceeds", // far too long
 	}
 
 	for _, username := range invalidUsernames {
-		err := validateUsername(username)
+		err := ValidateLinuxUsername(username)
 		if err == nil {
 			t.Errorf("Expected username '%s' to be rejected by security validation, but it passed", username)
 		}
@@ -41,12 +41,12 @@ func TestUsernameValidationFuzz(t *testing.T) {
 		"alice",
 		"bob123",
 		"customer1",
-		"a12345678901234", // 15 chars
+		"a12345678901234",  // 15 chars
 		"a123456789012345", // 16 chars
 	}
 
 	for _, username := range validUsernames {
-		err := validateUsername(username)
+		err := ValidateLinuxUsername(username)
 		if err != nil {
 			t.Errorf("Expected username '%s' to be valid, but got error: %v", username, err)
 		}
@@ -71,11 +71,11 @@ func TestDomainValidationFuzz(t *testing.T) {
 		"domain\x00.com",
 		"../../evil.com",
 		strings.Repeat("a", 70) + ".com", // label too long
-		"EXAMPLE.COM",                     // lowercase RFC required
+		"EXAMPLE.COM",                    // lowercase RFC required
 	}
 
 	for _, domain := range invalidDomains {
-		err := validateDomain(domain)
+		err := ValidateDomain(domain)
 		if err == nil {
 			t.Errorf("Expected domain '%s' to be rejected, but it was accepted", domain)
 		}
@@ -90,9 +90,9 @@ func TestDomainValidationFuzz(t *testing.T) {
 	}
 
 	for _, domain := range validDomains {
-		err := validateDomain(domain)
+		err := ValidateDomain(domain)
 		if err != nil {
-			t.Errorf("Expected domain '%s' to be valid, but got: %v", domain)
+			t.Errorf("Expected domain '%s' to be valid, but got: %v", domain, err)
 		}
 	}
 }
@@ -116,7 +116,7 @@ func TestDocumentRootTraversalFuzz(t *testing.T) {
 	}
 
 	for _, path := range traversalPaths {
-		err := validateDocumentRoot(username, path)
+		err := ValidateDocumentRoot(username, path)
 		if err == nil {
 			t.Errorf("Expected path traversal '%s' for user '%s' to be rejected, but passed", path, username)
 		}
@@ -130,7 +130,7 @@ func TestDocumentRootTraversalFuzz(t *testing.T) {
 	}
 
 	for _, path := range validPaths {
-		err := validateDocumentRoot(username, path)
+		err := ValidateDocumentRoot(username, path)
 		if err != nil {
 			t.Errorf("Expected path '%s' for user '%s' to be valid, but got: %v", path, username, err)
 		}
@@ -142,17 +142,17 @@ func TestDatabaseNamingSecurityFuzz(t *testing.T) {
 	username := "alice"
 
 	invalidDbNames := []string{
-		"bob_db",             // prefix mismatch
-		"alice_",              // empty suffix
-		"alice_db; DROP TABLE", // SQL injection attempt
-		"alice_db'--",         // SQL comment
-		"alice_db$(id)",       // command injection
-		"alice_my-database",   // dashes not allowed
+		"bob_db",                           // prefix mismatch
+		"alice_",                           // empty suffix
+		"alice_db; DROP TABLE",             // SQL injection attempt
+		"alice_db'--",                      // SQL comment
+		"alice_db$(id)",                    // command injection
+		"alice_my-database",                // dashes not allowed
 		"alice_" + strings.Repeat("a", 60), // exceeding length
 	}
 
 	for _, db := range invalidDbNames {
-		err := validateDatabaseName(username, db)
+		err := ValidateDatabaseName(username, db)
 		if err == nil {
 			t.Errorf("Expected database '%s' to be rejected for user '%s', but passed", db, username)
 		}
@@ -165,7 +165,7 @@ func TestDatabaseNamingSecurityFuzz(t *testing.T) {
 	}
 
 	for _, db := range validDbNames {
-		err := validateDatabaseName(username, db)
+		err := ValidateDatabaseName(username, db)
 		if err != nil {
 			t.Errorf("Expected database '%s' to be valid, but got: %v", db, err)
 		}
@@ -186,7 +186,7 @@ func TestGitRepoSecurityFuzz(t *testing.T) {
 	}
 
 	for _, repo := range invalidRepos {
-		err := validateGitRepoURL(repo)
+		err := ValidateGitRepoURL(repo)
 		if err == nil {
 			t.Errorf("Expected Git repo URL '%s' to be rejected, but passed", repo)
 		}
@@ -199,10 +199,9 @@ func TestGitRepoSecurityFuzz(t *testing.T) {
 	}
 
 	for _, repo := range validRepos {
-		err := validateGitRepoURL(repo)
+		err := ValidateGitRepoURL(repo)
 		if err != nil {
 			t.Errorf("Expected Git repo URL '%s' to be valid, but got: %v", repo, err)
 		}
 	}
 }
-

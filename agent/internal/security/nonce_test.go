@@ -1,7 +1,6 @@
 package security
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 	"time"

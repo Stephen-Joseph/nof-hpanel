@@ -3,7 +3,6 @@ package actions
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,22 +12,22 @@ import (
 )
 
 type VhostWritePayload struct {
-	Username            string         `json:"username"`
-	Domain              string         `json:"domain"`
-	Aliases             []string       `json:"aliases,omitempty"`
-	DocumentRoot        string         `json:"document_root"`
-	AppProfile          string         `json:"app_profile,omitempty"`
-	PHPVersion          string         `json:"php_version,omitempty"`
-	ForceHTTPS          bool           `json:"force_https,omitempty"`
-	SSLEnabled          bool           `json:"ssl_enabled,omitempty"`
-	SSLCertPath         string         `json:"ssl_cert_path,omitempty"`
-	SSLKeyPath          string         `json:"ssl_key_path,omitempty"`
-	HstsEnabled         bool           `json:"hsts_enabled,omitempty"`
-	WwwRedirect         string         `json:"www_redirect,omitempty"`
+	Username            string                   `json:"username"`
+	Domain              string                   `json:"domain"`
+	Aliases             []string                 `json:"aliases,omitempty"`
+	DocumentRoot        string                   `json:"document_root"`
+	AppProfile          string                   `json:"app_profile,omitempty"`
+	PHPVersion          string                   `json:"php_version,omitempty"`
+	ForceHTTPS          bool                     `json:"force_https,omitempty"`
+	SSLEnabled          bool                     `json:"ssl_enabled,omitempty"`
+	SSLCertPath         string                   `json:"ssl_cert_path,omitempty"`
+	SSLKeyPath          string                   `json:"ssl_key_path,omitempty"`
+	HstsEnabled         bool                     `json:"hsts_enabled,omitempty"`
+	WwwRedirect         string                   `json:"www_redirect,omitempty"`
 	Redirects           []RedirectRule           `json:"redirects,omitempty"`
 	ProtectedDirs       []ProtectedDirectoryRule `json:"protected_dirs,omitempty"`
 	MaxWebsites         int                      `json:"max_websites,omitempty"`
-	CurrentWebsiteCount int            `json:"current_website_count,omitempty"`
+	CurrentWebsiteCount int                      `json:"current_website_count,omitempty"`
 }
 
 type VhostWriteAction struct{}
@@ -98,17 +97,17 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 	serverNames := strings.Join(serverNamesList, " ")
 
 	vhostData := VhostTemplateData{
-		Username:     p.Username,
-		Domain:       p.Domain,
-		ServerNames:  serverNames,
-		DocumentRoot: p.DocumentRoot,
-		AppProfile:   p.AppProfile,
-		PHPVersion:   p.PHPVersion,
-		ForceHTTPS:   p.ForceHTTPS,
-		SSLEnabled:   p.SSLEnabled,
-		SSLCertPath:  p.SSLCertPath,
-		SSLKeyPath:   p.SSLKeyPath,
-		HstsEnabled:  p.HstsEnabled,
+		Username:      p.Username,
+		Domain:        p.Domain,
+		ServerNames:   serverNames,
+		DocumentRoot:  p.DocumentRoot,
+		AppProfile:    p.AppProfile,
+		PHPVersion:    p.PHPVersion,
+		ForceHTTPS:    p.ForceHTTPS,
+		SSLEnabled:    p.SSLEnabled,
+		SSLCertPath:   p.SSLCertPath,
+		SSLKeyPath:    p.SSLKeyPath,
+		HstsEnabled:   p.HstsEnabled,
 		WwwRedirect:   p.WwwRedirect,
 		Redirects:     p.Redirects,
 		ProtectedDirs: p.ProtectedDirs,
@@ -234,4 +233,3 @@ func copyFile(src, dst string) error {
 	}
 	return os.WriteFile(dst, data, 0640)
 }
-

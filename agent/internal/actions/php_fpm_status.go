@@ -92,4 +92,3 @@ func (a *PhpFpmStatusAction) Execute(ctx context.Context, payload []byte, dryRun
 		Logs: logs,
 	}, nil
 }
-

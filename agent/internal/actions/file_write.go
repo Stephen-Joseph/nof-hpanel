@@ -83,4 +83,3 @@ func (a *FileWriteAction) Execute(ctx context.Context, payload []byte, dryRun bo
 		Logs: logs,
 	}, nil
 }
-

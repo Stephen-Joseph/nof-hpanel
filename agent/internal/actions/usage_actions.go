@@ -2,7 +2,6 @@ package actions
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -99,19 +98,19 @@ func (a *UsageCollectAction) Execute(ctx context.Context, payload []byte, dryRun
 		return &ActionResult{
 			Success: true,
 			Data: map[string]any{
-				"username":               p.Username,
-				"storage_bytes":          int64(268435456), // 256 MB
-				"storage_mb":             256.0,
-				"inodes":                 int64(4120),
-				"bandwidth_bytes_total":  totalBw,
-				"domain_bandwidth":       domainBw,
-				"new_log_offsets":        newOffsets,
-				"database_bytes_total":   totalDbBytes,
-				"database_bytes":         dbBytes,
-				"fpm_active_workers":     1,
-				"fpm_idle_workers":       3,
-				"fpm_total_workers":      4,
-				"dry_run":                true,
+				"username":              p.Username,
+				"storage_bytes":         int64(268435456), // 256 MB
+				"storage_mb":            256.0,
+				"inodes":                int64(4120),
+				"bandwidth_bytes_total": totalBw,
+				"domain_bandwidth":      domainBw,
+				"new_log_offsets":       newOffsets,
+				"database_bytes_total":  totalDbBytes,
+				"database_bytes":        dbBytes,
+				"fpm_active_workers":    1,
+				"fpm_idle_workers":      3,
+				"fpm_total_workers":     4,
+				"dry_run":               true,
 			},
 			Logs: logs,
 		}, nil
@@ -247,13 +246,16 @@ func parseAccessLogBandwidth(logPath string, startOffset int64) (int64, int64) {
 // extractBytesSentFromLogLine extracts the body_bytes_sent field from Nginx combined log format.
 // Format: $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"
 func extractBytesSentFromLogLine(line string) int64 {
-	// Find closing quote of the request section: "... HTTP/1.1"
-	lastQuoteIdx := strings.LastIndex(line, "\"")
-	if lastQuoteIdx == -1 {
+	firstQuote := strings.Index(line, "\"")
+	if firstQuote == -1 {
+		return 0
+	}
+	secondQuote := strings.Index(line[firstQuote+1:], "\"")
+	if secondQuote == -1 {
 		return 0
 	}
 
-	afterRequest := strings.TrimSpace(line[lastQuoteIdx+1:])
+	afterRequest := strings.TrimSpace(line[firstQuote+1+secondQuote+1:])
 	fields := strings.Fields(afterRequest)
 	// fields[0] is HTTP status, fields[1] is body_bytes_sent
 	if len(fields) >= 2 {
@@ -264,4 +266,3 @@ func extractBytesSentFromLogLine(line string) int64 {
 
 	return 0
 }
-

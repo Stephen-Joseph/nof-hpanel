@@ -36,6 +36,9 @@ class TerminateAccount implements ShouldQueue
         $server = $this->account->server;
 
         $previousStatus = $this->account->status;
+        if ($this->account->status === AccountStatus::PENDING) {
+            $this->account->transitionTo(AccountStatus::FAILED, 'Terminated while pending');
+        }
         $this->account->transitionTo(AccountStatus::TERMINATING);
 
         $payload = [

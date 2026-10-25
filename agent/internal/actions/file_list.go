@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -163,4 +164,3 @@ func isTextExtension(ext string) bool {
 		return false
 	}
 }
-

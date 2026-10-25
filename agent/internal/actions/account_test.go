@@ -16,18 +16,18 @@ func TestValidateLinuxUsername(t *testing.T) {
 	}
 
 	invalid := []string{
-		"",            // empty
-		"ab",          // too short (min 3)
-		"1user",       // starts with number
-		"John",        // uppercase
-		"user_name",   // underscore not allowed
-		"user-name",   // hyphen not allowed
-		"user.name",   // dot not allowed
+		"",                        // empty
+		"ab",                      // too short (min 3)
+		"1user",                   // starts with number
+		"John",                    // uppercase
+		"user_name",               // underscore not allowed
+		"user-name",               // hyphen not allowed
+		"user.name",               // dot not allowed
 		"waytoolongusername12345", // exceeds 16 chars
-		"root",        // reserved
-		"www-data",    // reserved
-		"daemon",      // reserved
-		"nginx",       // reserved
+		"root",                    // reserved
+		"www-data",                // reserved
+		"daemon",                  // reserved
+		"nginx",                   // reserved
 	}
 	for _, u := range invalid {
 		if err := ValidateLinuxUsername(u); err == nil {
@@ -205,4 +205,3 @@ func TestAccountTerminateValidationAndToken(t *testing.T) {
 		t.Fatal("expected terminated=true")
 	}
 }
-
