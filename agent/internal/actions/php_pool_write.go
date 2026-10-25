@@ -127,11 +127,9 @@ func (a *PhpPoolWriteAction) Execute(ctx context.Context, payload []byte, dryRun
 		}, nil
 	}
 
-	tempDir := "/tmp/panel-agent"
-	_ = os.MkdirAll(tempDir, 0700)
-	tempFile := filepath.Join(tempDir, fmt.Sprintf("pool-%s-%s.conf", p.Username, p.Version))
-
-	if err := os.WriteFile(tempFile, []byte(configContent), 0640); err != nil {
+	_ = os.MkdirAll(targetDir, 0755)
+	tempFile, err := CreateConfigTemp(targetFile, []byte(configContent), 0640)
+	if err != nil {
 		return &ActionResult{
 			Success: false,
 			Error:   fmt.Sprintf("failed writing temp pool config: %s", err),
@@ -159,11 +157,10 @@ func (a *PhpPoolWriteAction) Execute(ctx context.Context, payload []byte, dryRun
 	}
 
 	// Step 2: Atomic move
-	_ = os.MkdirAll(targetDir, 0755)
-	if err := os.WriteFile(targetFile, []byte(configContent), 0644); err != nil {
+	if err := CommitConfigFile(tempFile, targetFile, 0644); err != nil {
 		return &ActionResult{
 			Success: false,
-			Error:   fmt.Sprintf("failed to write pool config to %s: %s", targetFile, err),
+			Error:   fmt.Sprintf("failed to move pool config to %s: %s", targetFile, err),
 			Logs:    logs,
 		}, err
 	}
@@ -174,7 +171,7 @@ func (a *PhpPoolWriteAction) Execute(ctx context.Context, payload []byte, dryRun
 	if reloadOutput, reloadErr := reloadCmd.CombinedOutput(); reloadErr != nil {
 		// Rollback on reload failure
 		if backupData != nil {
-			_ = os.WriteFile(targetFile, backupData, 0644)
+			_ = WriteConfigFileAtomically(targetFile, backupData, 0644)
 			_ = exec.Command("systemctl", "reload", serviceName).Run()
 		} else {
 			_ = os.Remove(targetFile)

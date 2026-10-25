@@ -142,24 +142,24 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 	}
 
 	// Real Linux Nginx deployment
-	tempDir := "/tmp/panel-agent"
-	_ = os.MkdirAll(tempDir, 0700)
-	tempFile := filepath.Join(tempDir, fmt.Sprintf("vhost-%s.conf", p.Domain))
-
-	if err := os.WriteFile(tempFile, []byte(configContent), 0640); err != nil {
-		return &ActionResult{Success: false, Error: fmt.Sprintf("writing temp vhost: %v", err), Logs: logs}, err
-	}
-
 	availPath := fmt.Sprintf("/etc/nginx/sites-available/%s.conf", p.Domain)
 	enabledPath := fmt.Sprintf("/etc/nginx/sites-enabled/%s.conf", p.Domain)
 	backupPath := availPath + ".bak"
+
+	_ = os.MkdirAll(filepath.Dir(availPath), 0755)
+	_ = os.MkdirAll(filepath.Dir(enabledPath), 0755)
+
+	tempFile, err := CreateConfigTemp(availPath, []byte(configContent), 0640)
+	if err != nil {
+		return &ActionResult{Success: false, Error: fmt.Sprintf("writing temp vhost: %v", err), Logs: logs}, err
+	}
+	defer os.Remove(tempFile)
 
 	if runtime.GOOS == "linux" {
 		// Run syntax test with nginx -t
 		if _, err := exec.LookPath("nginx"); err == nil {
 			testCmd := exec.CommandContext(ctx, "nginx", "-t")
 			if out, err := testCmd.CombinedOutput(); err != nil {
-				_ = os.Remove(tempFile)
 				return &ActionResult{
 					Success: false,
 					Error:   fmt.Sprintf("nginx syntax test failed: %s", strings.TrimSpace(string(out))),
@@ -174,10 +174,7 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 		}
 
 		// Atomically install new config
-		_ = os.MkdirAll(filepath.Dir(availPath), 0755)
-		_ = os.MkdirAll(filepath.Dir(enabledPath), 0755)
-
-		if err := os.Rename(tempFile, availPath); err != nil {
+		if err := CommitConfigFile(tempFile, availPath, 0640); err != nil {
 			return &ActionResult{Success: false, Error: fmt.Sprintf("failed to move config: %v", err), Logs: logs}, err
 		}
 
@@ -186,7 +183,7 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 		if err := os.Symlink(availPath, enabledPath); err != nil {
 			// Rollback
 			if _, statErr := os.Stat(backupPath); statErr == nil {
-				_ = os.Rename(backupPath, availPath)
+				_ = CommitConfigFile(backupPath, availPath, 0640)
 			}
 			return &ActionResult{Success: false, Error: fmt.Sprintf("failed to symlink: %v", err), Logs: logs}, err
 		}
@@ -197,7 +194,7 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 			// Rollback on reload failure
 			logs = append(logs, fmt.Sprintf("reload failed (%v), restoring backup...", err))
 			if _, statErr := os.Stat(backupPath); statErr == nil {
-				_ = os.Rename(backupPath, availPath)
+				_ = CommitConfigFile(backupPath, availPath, 0640)
 				_ = exec.CommandContext(ctx, "systemctl", "reload", "nginx").Run()
 			}
 			return &ActionResult{

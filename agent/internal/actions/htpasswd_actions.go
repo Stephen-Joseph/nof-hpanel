@@ -114,15 +114,9 @@ func (a *HtpasswdWriteAction) Execute(ctx context.Context, payload []byte, dryRu
 		buf.WriteString(fmt.Sprintf("%s:%s\n", strings.TrimSpace(entry.User), strings.TrimSpace(entry.Hash)))
 	}
 
-	// Step 3: Write atomically via temporary file
-	tmpFile := fmt.Sprintf("%s.tmp.%d", targetFilePath, os.Getpid())
-	if err := os.WriteFile(tmpFile, buf.Bytes(), 0640); err != nil {
-		return &ActionResult{Success: false, Error: fmt.Sprintf("failed to write temporary file: %v", err)}, err
-	}
-
-	if err := os.Rename(tmpFile, targetFilePath); err != nil {
-		_ = os.Remove(tmpFile)
-		return &ActionResult{Success: false, Error: fmt.Sprintf("failed to replace htpasswd file: %v", err)}, err
+	// Step 3: Write atomically via temporary file in the destination directory
+	if err := WriteConfigFileAtomically(targetFilePath, buf.Bytes(), 0640); err != nil {
+		return &ActionResult{Success: false, Error: fmt.Sprintf("failed to write htpasswd file: %v", err)}, err
 	}
 
 	// Step 4: Ensure permissions and group ownership for www-data so Nginx can read it

@@ -128,6 +128,30 @@ func TestAccountCreateExecuteRealRunSuccessAndIdempotent(t *testing.T) {
 		t.Fatalf("expected slice file to exist: %v", err)
 	}
 
+	// Verify no config temp files were left in action.tempDir
+	if _, err := os.Stat(action.tempDir); !os.IsNotExist(err) {
+		entries, _ := os.ReadDir(action.tempDir)
+		if len(entries) > 0 {
+			t.Fatalf("expected action.tempDir to have no files, found %d entries", len(entries))
+		}
+	}
+
+	// Verify no leftover .tmp-* files in destination directories
+	poolDir := filepath.Dir(poolFile)
+	poolEntries, _ := os.ReadDir(poolDir)
+	for _, entry := range poolEntries {
+		if strings.HasPrefix(entry.Name(), ".") && strings.Contains(entry.Name(), ".tmp-") {
+			t.Fatalf("leftover temp file in poolDir: %s", entry.Name())
+		}
+	}
+
+	vhostEntries, _ := os.ReadDir(action.vhostAvailableDir)
+	for _, entry := range vhostEntries {
+		if strings.HasPrefix(entry.Name(), ".") && strings.Contains(entry.Name(), ".tmp-") {
+			t.Fatalf("leftover temp file in vhostAvailableDir: %s", entry.Name())
+		}
+	}
+
 	delete(exec.runErrors, "id -u cust01")
 	res, err = action.Execute(context.Background(), testPayload(), false)
 	if err != nil {

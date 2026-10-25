@@ -97,7 +97,7 @@ func (a *AccountSuspendAction) Execute(ctx context.Context, payload []byte, dryR
 	if runtime.GOOS == "linux" {
 		crontabOut, err := exec.CommandContext(ctx, "crontab", "-u", p.Username, "-l").Output()
 		if err == nil && len(crontabOut) > 0 {
-			_ = os.WriteFile(filepath.Join(homeDir, ".crontab.backup"), crontabOut, 0600)
+			_ = WriteConfigFileAtomically(filepath.Join(homeDir, ".crontab.backup"), crontabOut, 0600)
 			_ = exec.CommandContext(ctx, "crontab", "-u", p.Username, "-r").Run()
 			logs = append(logs, "backed up and removed user crontab")
 		}

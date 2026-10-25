@@ -358,7 +358,7 @@ func (a *LogRotateAction) Execute(ctx context.Context, payload []byte, dryRun bo
 	}
 
 	// Write logrotate config atomically
-	if err := os.WriteFile(configPath, []byte(logrotateConfig), 0644); err != nil {
+	if err := WriteConfigFileAtomically(configPath, []byte(logrotateConfig), 0644); err != nil {
 		return &ActionResult{Success: false, Error: fmt.Sprintf("failed to write logrotate config: %v", err), Logs: logs}, err
 	}
 

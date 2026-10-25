@@ -432,32 +432,27 @@ func (a *AccountCreateAction) deployFpmPool(ctx context.Context, p AccountCreate
 		return fmt.Errorf("rendering fpm pool: %w", err)
 	}
 
-	if err := os.MkdirAll(a.tempDir, 0700); err != nil {
-		return fmt.Errorf("creating temp dir: %w", err)
-	}
-	tempPoolFile := filepath.Join(a.tempDir, fmt.Sprintf("%s-fpm.conf", p.Username))
-	if err := os.WriteFile(tempPoolFile, []byte(poolConfigContent), 0640); err != nil {
-		return fmt.Errorf("writing temp fpm pool: %w", err)
-	}
-
-	fpmBin, err := a.resolveFpmBinary(p.PHPVersion)
-	if err != nil {
-		_ = os.Remove(tempPoolFile)
-		return err
-	}
-	if out, err := a.executor.CombinedOutput(ctx, fpmBin, "-t"); err != nil {
-		_ = os.Remove(tempPoolFile)
-		return fmt.Errorf("php-fpm syntax test failed: %s", strings.TrimSpace(string(out)))
-	}
-
 	poolDir := filepath.Join(a.phpConfigBaseDir, p.PHPVersion, "fpm", "pool.d")
 	if err := os.MkdirAll(poolDir, 0755); err != nil {
-		_ = os.Remove(tempPoolFile)
 		return fmt.Errorf("creating pool directory: %w", err)
 	}
 	targetPoolFile := filepath.Join(poolDir, fmt.Sprintf("%s.conf", p.Username))
-	if err := os.Rename(tempPoolFile, targetPoolFile); err != nil {
-		_ = os.Remove(tempPoolFile)
+
+	tempPoolFile, err := CreateConfigTemp(targetPoolFile, []byte(poolConfigContent), 0640)
+	if err != nil {
+		return fmt.Errorf("writing temp fpm pool: %w", err)
+	}
+	defer os.Remove(tempPoolFile)
+
+	fpmBin, err := a.resolveFpmBinary(p.PHPVersion)
+	if err != nil {
+		return err
+	}
+	if out, err := a.executor.CombinedOutput(ctx, fpmBin, "-t"); err != nil {
+		return fmt.Errorf("php-fpm syntax test failed: %s", strings.TrimSpace(string(out)))
+	}
+
+	if err := CommitConfigFile(tempPoolFile, targetPoolFile, 0640); err != nil {
 		return fmt.Errorf("installing pool config: %w", err)
 	}
 
@@ -490,9 +485,6 @@ func (a *AccountCreateAction) deployVhost(ctx context.Context, p AccountCreatePa
 		return fmt.Errorf("rendering vhost template: %w", err)
 	}
 
-	if err := os.MkdirAll(a.tempDir, 0700); err != nil {
-		return fmt.Errorf("creating temp dir: %w", err)
-	}
 	if err := os.MkdirAll(a.vhostAvailableDir, 0755); err != nil {
 		return fmt.Errorf("ensuring vhost available dir: %w", err)
 	}
@@ -500,15 +492,16 @@ func (a *AccountCreateAction) deployVhost(ctx context.Context, p AccountCreatePa
 		return fmt.Errorf("ensuring vhost enabled dir: %w", err)
 	}
 
-	tempPath := filepath.Join(a.tempDir, fmt.Sprintf("%s-nginx.conf", p.PrimaryDomain))
 	targetPath := filepath.Join(a.vhostAvailableDir, fmt.Sprintf("%s.conf", p.PrimaryDomain))
 	symlinkPath := filepath.Join(a.vhostEnabledDir, fmt.Sprintf("%s.conf", p.PrimaryDomain))
 
-	if err := os.WriteFile(tempPath, []byte(configContent), 0644); err != nil {
+	tempPath, err := CreateConfigTemp(targetPath, []byte(configContent), 0644)
+	if err != nil {
 		return fmt.Errorf("writing temp vhost file: %w", err)
 	}
-	if err := os.Rename(tempPath, targetPath); err != nil {
-		_ = os.Remove(tempPath)
+	defer os.Remove(tempPath)
+
+	if err := CommitConfigFile(tempPath, targetPath, 0644); err != nil {
 		return fmt.Errorf("installing vhost file: %w", err)
 	}
 
@@ -564,7 +557,8 @@ func (a *AccountCreateAction) applySystemdSlice(ctx context.Context, p AccountCr
 	if p.CPUCores > 0 {
 		sliceBuf.WriteString(fmt.Sprintf("CPUQuota=%d%%\n", p.CPUCores*100))
 	}
-	if err := os.WriteFile(filepath.Join(sliceDir, "50-limits.conf"), []byte(sliceBuf.String()), 0644); err != nil {
+	sliceFile := filepath.Join(sliceDir, "50-limits.conf")
+	if err := WriteConfigFileAtomically(sliceFile, []byte(sliceBuf.String()), 0644); err != nil {
 		return fmt.Errorf("writing slice limits: %w", err)
 	}
 

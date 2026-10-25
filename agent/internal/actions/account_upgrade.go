@@ -104,7 +104,7 @@ func (a *AccountUpgradeAction) Execute(ctx context.Context, payload []byte, dryR
 	poolConfigContent, err := a.createAction.RenderPoolConfig(createPayload)
 	if err == nil && runtime.GOOS == "linux" {
 		poolFile := fmt.Sprintf("/etc/php/%s/fpm/pool.d/%s.conf", p.PHPVersion, p.Username)
-		_ = os.WriteFile(poolFile, []byte(poolConfigContent), 0640)
+		_ = WriteConfigFileAtomically(poolFile, []byte(poolConfigContent), 0640)
 		_ = exec.CommandContext(ctx, "systemctl", "reload", fmt.Sprintf("php%s-fpm", p.PHPVersion)).Run()
 		logs = append(logs, fmt.Sprintf("updated PHP-FPM pool limits for %s", p.Username))
 	}
@@ -121,7 +121,8 @@ func (a *AccountUpgradeAction) Execute(ctx context.Context, payload []byte, dryR
 		if p.CPUCores > 0 {
 			sliceBuf.WriteString(fmt.Sprintf("CPUQuota=%d%%\n", p.CPUCores*100))
 		}
-		_ = os.WriteFile(filepath.Join(sliceDir, "50-limits.conf"), []byte(sliceBuf.String()), 0644)
+		sliceFile := filepath.Join(sliceDir, "50-limits.conf")
+		_ = WriteConfigFileAtomically(sliceFile, []byte(sliceBuf.String()), 0644)
 		_ = exec.CommandContext(ctx, "systemctl", "daemon-reload").Run()
 		logs = append(logs, "updated systemd resource slice limits")
 	}

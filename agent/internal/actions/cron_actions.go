@@ -137,8 +137,12 @@ func (a *CronWriteAction) Execute(ctx context.Context, payload []byte, dryRun bo
 		}, nil
 	}
 
-	// Write to atomic temp file and apply
-	tmpFile, err := os.CreateTemp("", fmt.Sprintf("crontab_%s_*", p.Username))
+	// Write to atomic temp file in user home directory (or TempDir if user home not found) and apply
+	destDir := fmt.Sprintf("/home/%s", p.Username)
+	if _, err := os.Stat(destDir); err != nil {
+		destDir = os.TempDir()
+	}
+	tmpFile, err := os.CreateTemp(destDir, fmt.Sprintf(".crontab_%s.tmp-*", p.Username))
 	if err != nil {
 		return &ActionResult{Success: false, Error: fmt.Sprintf("failed to create temp crontab file: %v", err), Logs: logs}, err
 	}
@@ -149,7 +153,16 @@ func (a *CronWriteAction) Execute(ctx context.Context, payload []byte, dryRun bo
 		_ = tmpFile.Close()
 		return &ActionResult{Success: false, Error: fmt.Sprintf("failed to write temp crontab file: %v", err), Logs: logs}, err
 	}
-	_ = tmpFile.Close()
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return &ActionResult{Success: false, Error: fmt.Sprintf("failed to sync temp crontab file: %v", err), Logs: logs}, err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return &ActionResult{Success: false, Error: fmt.Sprintf("failed to close temp crontab file: %v", err), Logs: logs}, err
+	}
+	if err := os.Chmod(tmpPath, 0600); err != nil {
+		return &ActionResult{Success: false, Error: fmt.Sprintf("failed to chmod temp crontab file: %v", err), Logs: logs}, err
+	}
 
 	cmd := exec.CommandContext(ctx, "crontab", "-u", p.Username, tmpPath)
 	var stderr bytes.Buffer
