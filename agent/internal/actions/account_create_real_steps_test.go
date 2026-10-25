@@ -1,0 +1,252 @@
+package actions
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+type fakeCommandResult struct {
+	out []byte
+	err error
+}
+
+type fakeCommandExecutor struct {
+	runErrors      map[string]error
+	combinedResult map[string]fakeCommandResult
+	lookups        map[string]bool
+}
+
+func (f *fakeCommandExecutor) Run(_ context.Context, name string, args ...string) error {
+	if err, ok := f.runErrors[f.key(name, args...)]; ok {
+		return err
+	}
+	return nil
+}
+
+func (f *fakeCommandExecutor) CombinedOutput(_ context.Context, name string, args ...string) ([]byte, error) {
+	if result, ok := f.combinedResult[f.key(name, args...)]; ok {
+		return result.out, result.err
+	}
+	return []byte{}, nil
+}
+
+func (f *fakeCommandExecutor) LookPath(file string) (string, error) {
+	if f.lookups[file] {
+		return "/usr/bin/" + file, nil
+	}
+
+	return "", errors.New("not found")
+}
+
+func (f *fakeCommandExecutor) key(name string, args ...string) string {
+	if len(args) == 0 {
+		return name
+	}
+	return name + " " + strings.Join(args, " ")
+}
+
+func testPayload() []byte {
+	payload, _ := json.Marshal(AccountCreatePayload{
+		Username:      "cust01",
+		PrimaryDomain: "cust01.example.com",
+		PHPVersion:    "8.4",
+		StorageMB:     10240,
+		Inodes:        100000,
+		PHPWorkers:    8,
+		PHPMemoryMB:   512,
+		CPUCores:      2,
+		MemoryLimitMB: 1024,
+	})
+
+	return payload
+}
+
+func newTestAction(t *testing.T, exec *fakeCommandExecutor) *AccountCreateAction {
+	t.Helper()
+	root := t.TempDir()
+	action := NewAccountCreateActionForTest(
+		exec,
+		filepath.Join(root, "home"),
+		filepath.Join(root, "tmp"),
+		filepath.Join(root, "etc", "php"),
+		filepath.Join(root, "etc", "nginx", "sites-available"),
+		filepath.Join(root, "etc", "nginx", "sites-enabled"),
+		filepath.Join(root, "etc", "systemd", "system"),
+	)
+
+	return action
+}
+
+func TestAccountCreateExecuteRealRunSuccessAndIdempotent(t *testing.T) {
+	exec := &fakeCommandExecutor{
+		runErrors: map[string]error{
+			"id -u cust01": errors.New("user not found"),
+		},
+		combinedResult: map[string]fakeCommandResult{},
+		lookups: map[string]bool{
+			"setquota":    true,
+			"php-fpm8.4": true,
+		},
+	}
+	action := newTestAction(t, exec)
+
+	res, err := action.Execute(context.Background(), testPayload(), false)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected success=true, got error %q", res.Error)
+	}
+
+	homeDir := filepath.Join(action.homeBaseDir, "cust01")
+	if _, err := os.Stat(filepath.Join(homeDir, "public_html", "index.html")); err != nil {
+		t.Fatalf("expected default index file to exist: %v", err)
+	}
+
+	poolFile := filepath.Join(action.phpConfigBaseDir, "8.4", "fpm", "pool.d", "cust01.conf")
+	if _, err := os.Stat(poolFile); err != nil {
+		t.Fatalf("expected pool file to exist: %v", err)
+	}
+
+	vhostFile := filepath.Join(action.vhostAvailableDir, "cust01.example.com.conf")
+	if _, err := os.Stat(vhostFile); err != nil {
+		t.Fatalf("expected vhost file to exist: %v", err)
+	}
+
+	symlinkPath := filepath.Join(action.vhostEnabledDir, "cust01.example.com.conf")
+	if _, err := os.Lstat(symlinkPath); err != nil {
+		t.Fatalf("expected vhost symlink to exist: %v", err)
+	}
+
+	sliceFile := filepath.Join(action.systemdConfigDir, "hpanel-cust01.slice.d", "50-limits.conf")
+	if _, err := os.Stat(sliceFile); err != nil {
+		t.Fatalf("expected slice file to exist: %v", err)
+	}
+
+	delete(exec.runErrors, "id -u cust01")
+	res, err = action.Execute(context.Background(), testPayload(), false)
+	if err != nil {
+		t.Fatalf("expected idempotent rerun success, got error: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected idempotent rerun success=true, got error %q", res.Error)
+	}
+}
+
+func TestAccountCreateExecuteReturnsStepErrorOnCreateUserFailure(t *testing.T) {
+	exec := &fakeCommandExecutor{
+		runErrors: map[string]error{
+			"id -u cust01": errors.New("user missing"),
+		},
+		combinedResult: map[string]fakeCommandResult{
+			"useradd -m -d /home/cust01 -s /usr/sbin/nologin -c Hosting Account cust01 cust01": {
+				out: []byte("permission denied"),
+				err: errors.New("exit status 1"),
+			},
+		},
+		lookups: map[string]bool{},
+	}
+	action := NewAccountCreateActionForTest(exec, "/home", t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir())
+
+	res, err := action.Execute(context.Background(), testPayload(), false)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if res.Success {
+		t.Fatal("expected success=false")
+	}
+	if !strings.Contains(res.Error, "step 'create_user' failed") {
+		t.Fatalf("unexpected error message: %s", res.Error)
+	}
+}
+
+func TestAccountCreateExecuteReturnsStepErrorOnQuotaFailure(t *testing.T) {
+	exec := &fakeCommandExecutor{
+		runErrors: map[string]error{
+			"id -u cust01": nil,
+		},
+		combinedResult: map[string]fakeCommandResult{
+			"setquota -u cust01 10485760 10485760 100000 100000 /": {
+				err: errors.New("exit status 1"),
+			},
+		},
+		lookups: map[string]bool{"setquota": true},
+	}
+	action := newTestAction(t, exec)
+
+	res, err := action.Execute(context.Background(), testPayload(), false)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(res.Error, "step 'quota' failed") {
+		t.Fatalf("unexpected error message: %s", res.Error)
+	}
+}
+
+func TestAccountCreateExecuteReturnsStepErrorOnFpmFailure(t *testing.T) {
+	exec := &fakeCommandExecutor{
+		runErrors: map[string]error{},
+		combinedResult: map[string]fakeCommandResult{
+			"php-fpm8.4 -t": {
+				out: []byte("config test failed"),
+				err: errors.New("exit status 1"),
+			},
+		},
+		lookups: map[string]bool{"php-fpm8.4": true},
+	}
+	action := newTestAction(t, exec)
+
+	res, err := action.Execute(context.Background(), testPayload(), false)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(res.Error, "step 'php_pool' failed") {
+		t.Fatalf("unexpected error message: %s", res.Error)
+	}
+}
+
+func TestAccountCreateExecuteReturnsStepErrorOnVhostFailure(t *testing.T) {
+	exec := &fakeCommandExecutor{
+		runErrors: map[string]error{},
+		combinedResult: map[string]fakeCommandResult{
+			"nginx -t": {
+				out: []byte("invalid vhost"),
+				err: errors.New("exit status 1"),
+			},
+		},
+		lookups: map[string]bool{"php-fpm8.4": true},
+	}
+	action := newTestAction(t, exec)
+
+	res, err := action.Execute(context.Background(), testPayload(), false)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(res.Error, "step 'vhost' failed") {
+		t.Fatalf("unexpected error message: %s", res.Error)
+	}
+}
+
+func TestAccountCreateExecuteReturnsStepErrorOnSystemdSliceFailure(t *testing.T) {
+	exec := &fakeCommandExecutor{
+		runErrors: map[string]error{
+			"systemctl daemon-reload": errors.New("daemon-reload failed"),
+		},
+		combinedResult: map[string]fakeCommandResult{},
+		lookups: map[string]bool{"php-fpm8.4": true},
+	}
+	action := newTestAction(t, exec)
+
+	res, err := action.Execute(context.Background(), testPayload(), false)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(res.Error, "step 'systemd_slice' failed") {
+		t.Fatalf("unexpected error message: %s", res.Error)
+	}
+}

@@ -2,7 +2,9 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +14,17 @@ import (
 	"github.com/hpanel/agent/internal/config"
 	"github.com/hpanel/agent/internal/security"
 )
+
+type failingTestAction struct{}
+
+func (f failingTestAction) Name() string { return "test.fail" }
+func (f failingTestAction) Validate(payload []byte) error { return nil }
+func (f failingTestAction) Execute(ctx context.Context, payload []byte, dryRun bool) (*actions.ActionResult, error) {
+	return &actions.ActionResult{
+		Success: false,
+		Error:   "step 'php_pool' failed: php-fpm syntax test failed",
+	}, errors.New("php-fpm syntax test failed")
+}
 
 func setupTestServer(secret string) (*Server, *security.RequestValidator, *actions.Registry) {
 	cfg := config.DefaultConfig()
@@ -24,6 +37,7 @@ func setupTestServer(secret string) (*Server, *security.RequestValidator, *actio
 	registry := actions.NewRegistry()
 	registry.Register(actions.NewSystemPingAction("1.0.0-test"))
 	registry.Register(actions.NewSystemHealthAction())
+	registry.Register(actions.NewAccountCreateAction())
 
 	srv := NewServer(cfg, validator, registry, nil)
 	return srv, validator, registry
@@ -192,5 +206,60 @@ func TestServerActionUnknownAction(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for unknown action, got %d", rec.Code)
+	}
+}
+
+func TestServerActionValidationReturns422(t *testing.T) {
+	secret := "secret-key-1234"
+	srv, _, _ := setupTestServer(secret)
+
+	now := time.Now().Unix()
+	payload := []byte(`{"username":"no"}`)
+	sig := security.Sign([]byte(secret), "account.create", "req-test-6", now, "nonce-invalid", false, payload)
+
+	reqBody, _ := json.Marshal(ActionRequest{
+		Action:    "account.create",
+		RequestID: "req-test-6",
+		Timestamp: now,
+		Nonce:     "nonce-invalid",
+		DryRun:    false,
+		Payload:   payload,
+		Signature: sig,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/action", bytes.NewReader(reqBody))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for validation error, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestServerActionExecutionFailureReturns500(t *testing.T) {
+	secret := "secret-key-1234"
+	srv, _, registry := setupTestServer(secret)
+	registry.Register(failingTestAction{})
+
+	now := time.Now().Unix()
+	payload := []byte(`{}`)
+	sig := security.Sign([]byte(secret), "test.fail", "req-test-7", now, "nonce-fail", false, payload)
+
+	reqBody, _ := json.Marshal(ActionRequest{
+		Action:    "test.fail",
+		RequestID: "req-test-7",
+		Timestamp: now,
+		Nonce:     "nonce-fail",
+		DryRun:    false,
+		Payload:   payload,
+		Signature: sig,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/action", bytes.NewReader(reqBody))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for action execution failure, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
