@@ -766,3 +766,22 @@ if [[ "$INSTALL_NODE" == "yes" ]]; then
 fi
 
 print_summary
+
+SMOKE_TEST_SCRIPT="${SCRIPT_DIR}/smoke-test.sh"
+if [[ -f "$SMOKE_TEST_SCRIPT" && $DRY_RUN == false ]]; then
+  RUN_SMOKE="${RUN_SMOKE_TEST:-}"
+  if [[ -t 0 && -z "$RUN_SMOKE" ]]; then
+    say ""
+    read -r -p "Run smoke test now? [y/N]: " choice
+    case "$choice" in
+      [yY]|[yY][eE][sS]) RUN_SMOKE="yes" ;;
+      *) RUN_SMOKE="no" ;;
+    esac
+  fi
+
+  if [[ "$RUN_SMOKE" == "yes" ]]; then
+    say ""
+    say "Running post-install smoke test..."
+    bash "$SMOKE_TEST_SCRIPT" "${APP_DIR}" || warn "Smoke test reported warnings or failures."
+  fi
+fi
