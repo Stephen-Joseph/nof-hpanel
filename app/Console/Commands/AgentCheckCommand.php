@@ -204,3 +204,4 @@ class AgentCheckCommand extends Command
         return self::SUCCESS;
     }
 }
+

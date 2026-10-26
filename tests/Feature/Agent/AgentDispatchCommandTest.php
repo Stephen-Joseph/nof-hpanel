@@ -57,3 +57,4 @@ test('agent dispatch rejects invalid json payload', function () {
         ->assertFailed()
         ->expectsOutputToContain('Invalid JSON payload provided');
 });
+

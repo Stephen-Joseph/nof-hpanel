@@ -72,3 +72,4 @@ Configured in `config/hpanel.php`:
 - Resellers can only manage accounts within their subtree.
 - Administrators can manage all accounts.
 - Every upload, extract, and archive action generates an `AgentJob` tracked in the database and audit trail.
+

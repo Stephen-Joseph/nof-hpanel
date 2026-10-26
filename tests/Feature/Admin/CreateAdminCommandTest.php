@@ -35,3 +35,4 @@ test('panel:create-admin validates email and minimum password length', function 
 
     expect(User::where('email', 'invalid-email')->exists())->toBeFalse();
 });
+

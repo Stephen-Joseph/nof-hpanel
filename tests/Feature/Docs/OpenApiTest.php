@@ -27,3 +27,4 @@ test('ui-kit route returns 404 when environment is production', function () {
 
     $response->assertNotFound();
 });
+
