@@ -408,7 +408,6 @@ class FileManager extends Component
                     'chunks' => $totalChunks,
                 ],
                 'dry_run' => false,
-                'attempts' => 1,
                 'started_at' => now(),
             ]);
 
@@ -523,7 +522,6 @@ class FileManager extends Component
                 'destination_dir' => $destinationDir,
             ],
             'dry_run' => false,
-            'attempts' => 1,
             'started_at' => now(),
         ]);
 
@@ -623,7 +621,6 @@ class FileManager extends Component
                 'destination_zip' => $destZip,
             ],
             'dry_run' => false,
-            'attempts' => 1,
             'started_at' => now(),
         ]);
 

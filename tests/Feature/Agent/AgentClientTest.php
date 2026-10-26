@@ -272,3 +272,56 @@ test('empty payload serializes to {} in both signed string and transmitted body'
         return true;
     });
 });
+
+test('production environment refuses default HMAC secret with explicit env var error message', function () {
+    app()->detectEnvironment(fn () => 'production');
+    config()->set('services.agent.secret', 'test-agent-secret-key-change-me');
+
+    expect(fn () => $this->client->execute($this->server, 'system.ping'))
+        ->toThrow(\RuntimeException::class, 'PANEL_AGENT_HMAC_SECRET must be configured to a non-default value in production.');
+});
+
+test('production environment fails loudly if mTLS client cert, key, or CA is missing or unreadable', function () {
+    app()->detectEnvironment(fn () => 'production');
+    config()->set('services.agent.secret', 'valid-production-secret-12345');
+    config()->set('services.agent.client_cert_file', '/nonexistent/client.crt');
+    config()->set('services.agent.client_key_file', '/nonexistent/client.key');
+    config()->set('services.agent.tls_ca_file', '/nonexistent/ca.crt');
+
+    expect(fn () => $this->client->execute($this->server, 'system.ping'))
+        ->toThrow(\RuntimeException::class, 'PANEL_AGENT_CLIENT_CERT_FILE is missing or unreadable');
+});
+
+test('400, 422, and 500 error responses include agent message and details in exception text', function () {
+    Http::fake([
+        'https://10.0.0.10:8443/action' => Http::response([
+            'request_id' => 'req-err-422',
+            'action' => 'account.create',
+            'error' => [
+                'code' => 'STEP_FAILED',
+                'message' => 'Quota initialization failed',
+                'details' => 'quotactl unsupported on filesystem',
+            ],
+        ], 422),
+    ]);
+
+    expect(fn () => $this->client->execute($this->server, 'account.create', ['username' => 'testuser']))
+        ->toThrow(\App\Exceptions\AgentClientException::class, 'Quota initialization failed | quotactl unsupported on filesystem');
+});
+
+test('hpanel:agent-check command runs dry-run ping and reports status', function () {
+    Http::fake([
+        'https://10.0.0.10:8443/action' => Http::response([
+            'request_id' => 'req-ping-check',
+            'action' => 'system.ping',
+            'success' => true,
+            'data' => ['pong' => true],
+            'logs' => ['system.ping executed'],
+        ], 200),
+    ]);
+
+    $this->artisan('hpanel:agent-check', ['--server' => $this->server->id])
+        ->expectsOutputToContain('PANEL_AGENT_HMAC_SECRET')
+        ->expectsOutputToContain('Agent check passed successfully.')
+        ->assertExitCode(0);
+});

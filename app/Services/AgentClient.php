@@ -96,7 +96,7 @@ class AgentClient
 
         if (app()->environment('production') && ($secret === '' || hash_equals($defaultSecret, $secret))) {
             throw new \RuntimeException(
-                'PANEL_AGENT_HMAC_SECRET must be configured to a non-default value in production.'
+                'PANEL_AGENT_HMAC_SECRET must be configured to a non-default value in production. Set the PANEL_AGENT_HMAC_SECRET environment variable in .env.'
             );
         }
 
@@ -204,17 +204,36 @@ class AgentClient
 
         $options = [];
 
-        // Configure client certificate and private key for mTLS if provided
         $clientCert = config('services.agent.client_cert_file');
         $clientKey = config('services.agent.client_key_file');
-        if ($clientCert && $clientKey && file_exists($clientCert) && file_exists($clientKey)) {
+        $caFile = config('services.agent.tls_ca_file');
+
+        if (app()->environment('production')) {
+            if (! $clientCert || ! is_readable($clientCert)) {
+                throw new \RuntimeException(
+                    "PANEL_AGENT_CLIENT_CERT_FILE is missing or unreadable: '{$clientCert}'. Set a readable file path in .env."
+                );
+            }
+            if (! $clientKey || ! is_readable($clientKey)) {
+                throw new \RuntimeException(
+                    "PANEL_AGENT_CLIENT_KEY_FILE is missing or unreadable: '{$clientKey}'. Set a readable file path in .env."
+                );
+            }
+            if (! $caFile || ! is_readable($caFile)) {
+                throw new \RuntimeException(
+                    "PANEL_AGENT_TLS_CA_FILE is missing or unreadable: '{$caFile}'. Set a readable file path in .env."
+                );
+            }
+        }
+
+        // Configure client certificate and private key for mTLS if provided
+        if ($clientCert && is_readable($clientCert) && $clientKey && is_readable($clientKey)) {
             $options['ssl_key'] = $clientKey;
             $options['cert'] = $clientCert;
         }
 
         // Configure custom CA certificate if provided
-        $caFile = config('services.agent.tls_ca_file');
-        if ($caFile && file_exists($caFile)) {
+        if ($caFile && is_readable($caFile)) {
             $options['verify'] = $caFile;
         }
 
@@ -317,7 +336,11 @@ class AgentClient
 
             if ($parts !== []) {
                 $message = implode(' | ', $parts);
+            } else {
+                $message = json_encode($error) ?: $default;
             }
+        } elseif (! empty($json['message'])) {
+            $message = (string) $json['message'];
         }
 
         return Str::limit($message, 500, '');
