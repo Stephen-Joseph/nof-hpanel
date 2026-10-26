@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -210,20 +211,32 @@ func TestAccountTerminateValidationAndToken(t *testing.T) {
 
 func TestAccountTerminateCleansUpVhostsAndPools(t *testing.T) {
 	tempBase := t.TempDir()
+	homeBase := filepath.Join(tempBase, "home")
 	availDir := filepath.Join(tempBase, "sites-available")
 	enabledDir := filepath.Join(tempBase, "sites-enabled")
 	phpBase := filepath.Join(tempBase, "php")
 	sshdDir := filepath.Join(tempBase, "sshd_config.d")
 
+	_ = os.MkdirAll(homeBase, 0755)
 	_ = os.MkdirAll(availDir, 0755)
 	_ = os.MkdirAll(enabledDir, 0755)
 	_ = os.MkdirAll(filepath.Join(phpBase, "8.3", "fpm", "pool.d"), 0755)
 	_ = os.MkdirAll(filepath.Join(phpBase, "8.4", "fpm", "pool.d"), 0755)
 	_ = os.MkdirAll(sshdDir, 0755)
 
+	// Create user home directory with subdirectories and root-owned/read-only file
+	userHome := filepath.Join(homeBase, "smoketest1")
+	_ = os.MkdirAll(filepath.Join(userHome, "public_html"), 0755)
+	_ = os.MkdirAll(filepath.Join(userHome, "logs"), 0750)
+	_ = os.MkdirAll(filepath.Join(userHome, "tmp"), 0750)
+	_ = os.MkdirAll(filepath.Join(userHome, "backups"), 0750)
+	_ = os.MkdirAll(filepath.Join(userHome, ".ssh"), 0700)
+	rootFile := filepath.Join(userHome, "public_html", "root-file.txt")
+	_ = os.WriteFile(rootFile, []byte("root owned"), 0400)
+
 	// Create user vhost
 	userVhostAvail := filepath.Join(availDir, "smoketest1.test.conf")
-	_ = os.WriteFile(userVhostAvail, []byte("server { root /home/smoketest1/public_html; }"), 0644)
+	_ = os.WriteFile(userVhostAvail, []byte(fmt.Sprintf("server { root %s/public_html; }", userHome)), 0644)
 	userVhostEnabled := filepath.Join(enabledDir, "smoketest1.test.conf")
 	_ = os.Symlink(userVhostAvail, userVhostEnabled)
 
@@ -244,12 +257,13 @@ func TestAccountTerminateCleansUpVhostsAndPools(t *testing.T) {
 	_ = os.Symlink(otherVhostAvail, otherVhostEnabled)
 
 	fakeExec := &fakeCommandExecutor{}
-	action := NewAccountTerminateActionForTest(fakeExec, availDir, enabledDir, phpBase, sshdDir)
+	action := NewAccountTerminateActionForTest(fakeExec, homeBase, availDir, enabledDir, phpBase, sshdDir)
 
 	payload, _ := json.Marshal(AccountTerminatePayload{
 		Username:     "smoketest1",
 		ConfirmToken: "TERMINATE-smoketest1",
 		TakeBackup:   false,
+		Domains:      []string{"smoketest1.test"},
 	})
 
 	res, err := action.Execute(context.Background(), payload, false)
@@ -257,19 +271,28 @@ func TestAccountTerminateCleansUpVhostsAndPools(t *testing.T) {
 		t.Fatalf("execute failed: %v", err)
 	}
 
-	// Verify smoketest1 files removed
+	// Verify smoketest1 home directory completely removed
+	if _, err := os.Stat(userHome); !os.IsNotExist(err) {
+		t.Errorf("expected user home directory to be completely removed")
+	}
+
+	// Verify smoketest1 vhost files removed
 	if _, err := os.Stat(userVhostAvail); !os.IsNotExist(err) {
 		t.Errorf("expected user vhost in available to be removed")
 	}
 	if _, err := os.Lstat(userVhostEnabled); !os.IsNotExist(err) {
 		t.Errorf("expected user vhost link in enabled to be removed")
 	}
+
+	// Verify PHP pools removed
 	if _, err := os.Stat(userPool83); !os.IsNotExist(err) {
 		t.Errorf("expected user pool 8.3 to be removed")
 	}
 	if _, err := os.Stat(userPool84); !os.IsNotExist(err) {
 		t.Errorf("expected user pool 8.4 to be removed")
 	}
+
+	// Verify sshd config removed
 	if _, err := os.Stat(sshdConf); !os.IsNotExist(err) {
 		t.Errorf("expected sshd config to be removed")
 	}
@@ -280,5 +303,56 @@ func TestAccountTerminateCleansUpVhostsAndPools(t *testing.T) {
 	}
 	if _, err := os.Lstat(otherVhostEnabled); os.IsNotExist(err) {
 		t.Errorf("other user vhost in enabled should not be removed")
+	}
+}
+
+func TestAccountTerminateReportsLeftoversExplicitly(t *testing.T) {
+	tempBase := t.TempDir()
+	homeBase := filepath.Join(tempBase, "home")
+	availDir := filepath.Join(tempBase, "sites-available")
+	enabledDir := filepath.Join(tempBase, "sites-enabled")
+	phpBase := filepath.Join(tempBase, "php")
+	sshdDir := filepath.Join(tempBase, "sshd_config.d")
+
+	_ = os.MkdirAll(homeBase, 0755)
+	_ = os.MkdirAll(availDir, 0755)
+	_ = os.MkdirAll(enabledDir, 0755)
+	_ = os.MkdirAll(filepath.Join(phpBase, "8.3", "fpm", "pool.d"), 0755)
+	_ = os.MkdirAll(sshdDir, 0755)
+
+	// Create user home
+	userHome := filepath.Join(homeBase, "lockeduser")
+	_ = os.MkdirAll(userHome, 0755)
+
+	// Make sshdConf a non-empty directory so os.Remove(sshdConf) cannot delete it
+	sshdConf := filepath.Join(sshdDir, "hpanel-lockeduser.conf")
+	_ = os.MkdirAll(sshdConf, 0755)
+	_ = os.WriteFile(filepath.Join(sshdConf, "unremovable.txt"), []byte("stubborn"), 0644)
+
+	fakeExec := &fakeCommandExecutor{}
+	action := NewAccountTerminateActionForTest(fakeExec, homeBase, availDir, enabledDir, phpBase, sshdDir)
+
+	payload, _ := json.Marshal(AccountTerminatePayload{
+		Username:     "lockeduser",
+		ConfirmToken: "TERMINATE-lockeduser",
+		TakeBackup:   false,
+	})
+
+	res, err := action.Execute(context.Background(), payload, false)
+	if err == nil {
+		t.Fatal("expected termination to fail when leftover path exists")
+	}
+	if res.Success {
+		t.Fatal("expected res.Success=false on leftover path")
+	}
+	if !strings.Contains(err.Error(), "leftover paths remain after termination") {
+		t.Errorf("expected error message to mention leftover paths, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), sshdConf) {
+		t.Errorf("expected error to explicitly include leftover path %s, got: %v", sshdConf, err)
+	}
+	leftovers, ok := res.Data["leftovers"].([]string)
+	if !ok || len(leftovers) == 0 {
+		t.Errorf("expected res.Data[leftovers] to contain leftover paths, got: %v", res.Data["leftovers"])
 	}
 }

@@ -20,6 +20,7 @@ type AccountTerminatePayload struct {
 
 type AccountTerminateAction struct {
 	executor          commandExecutor
+	homeBaseDir       string
 	vhostAvailableDir string
 	vhostEnabledDir   string
 	phpConfigBaseDir  string
@@ -30,6 +31,7 @@ type AccountTerminateAction struct {
 func NewAccountTerminateAction() *AccountTerminateAction {
 	return &AccountTerminateAction{
 		executor:          osCommandExecutor{},
+		homeBaseDir:       "/home",
 		vhostAvailableDir: "/etc/nginx/sites-available",
 		vhostEnabledDir:   "/etc/nginx/sites-enabled",
 		phpConfigBaseDir:  "/etc/php",
@@ -38,9 +40,10 @@ func NewAccountTerminateAction() *AccountTerminateAction {
 	}
 }
 
-func NewAccountTerminateActionForTest(executor commandExecutor, vhostAvailableDir, vhostEnabledDir, phpConfigBaseDir, sshdConfigDir string) *AccountTerminateAction {
+func NewAccountTerminateActionForTest(executor commandExecutor, homeBaseDir, vhostAvailableDir, vhostEnabledDir, phpConfigBaseDir, sshdConfigDir string) *AccountTerminateAction {
 	return &AccountTerminateAction{
 		executor:          executor,
+		homeBaseDir:       homeBaseDir,
 		vhostAvailableDir: vhostAvailableDir,
 		vhostEnabledDir:   vhostEnabledDir,
 		phpConfigBaseDir:  phpConfigBaseDir,
@@ -107,7 +110,7 @@ func (a *AccountTerminateAction) Execute(ctx context.Context, payload []byte, dr
 		}, nil
 	}
 
-	homeDir := fmt.Sprintf("/home/%s", p.Username)
+	homeDir := filepath.Join(a.homeBaseDir, p.Username)
 
 	// Step 1: Create final backup if requested
 	backupPath := ""
@@ -117,7 +120,7 @@ func (a *AccountTerminateAction) Execute(ctx context.Context, payload []byte, dr
 		backupPath = filepath.Join(backupDir, fmt.Sprintf("%s-final.tar.gz", p.Username))
 		if _, err := os.Stat(homeDir); err == nil {
 			// Strict exec argument array only (no shell strings)
-			tarCmd := a.executor.Run(ctx, "tar", "-czf", backupPath, "-C", "/home", p.Username)
+			tarCmd := a.executor.Run(ctx, "tar", "-czf", backupPath, "-C", a.homeBaseDir, p.Username)
 			if tarCmd == nil {
 				logs = append(logs, fmt.Sprintf("created final archive at %s", backupPath))
 			} else {
@@ -164,8 +167,8 @@ func (a *AccountTerminateAction) Execute(ctx context.Context, payload []byte, dr
 		}
 
 		// Also discover any vhosts containing /home/<username> or /home/<username>/
-		userHomeStr := fmt.Sprintf("/home/%s", p.Username)
-		userHomeSlash := fmt.Sprintf("/home/%s/", p.Username)
+		userHomeStr := filepath.Join(a.homeBaseDir, p.Username)
+		userHomeSlash := userHomeStr + "/"
 		userSockStr := fmt.Sprintf("-%s.sock", p.Username)
 
 		if entries, err := os.ReadDir(a.vhostAvailableDir); err == nil {
@@ -242,17 +245,91 @@ func (a *AccountTerminateAction) Execute(ctx context.Context, payload []byte, dr
 		logs = append(logs, "removed user crontab")
 	}
 
-	// Step 8: Delete system user and remove /home/<username>
+	// Step 8: Delete system user and remove home directory recursively (including root-owned files)
 	if a.isLinux {
-		userdelErr := a.executor.Run(ctx, "userdel", "-r", p.Username)
-		if userdelErr != nil {
-			// If user doesn't exist, ignore (idempotent), otherwise ensure home dir is cleaned up
-			_ = os.RemoveAll(homeDir)
-		}
-		logs = append(logs, fmt.Sprintf("removed system user '%s' and home directory", p.Username))
-	} else {
+		_ = a.executor.Run(ctx, "userdel", "-r", p.Username)
+	}
+
+	if _, err := os.Stat(homeDir); err == nil {
+		// Ensure write/exec permissions so root-owned or read-only files can be removed
+		_ = filepath.Walk(homeDir, func(path string, info os.FileInfo, err error) error {
+			if err == nil && info.IsDir() {
+				_ = os.Chmod(path, 0777)
+			}
+			return nil
+		})
+		_ = a.executor.Run(ctx, "rm", "-rf", homeDir)
 		_ = os.RemoveAll(homeDir)
-		logs = append(logs, fmt.Sprintf("cleaned up %s on non-linux OS", homeDir))
+	}
+
+	// Step 9: Verify and explicitly report any leftover paths
+	var leftovers []string
+
+	// Check home directory
+	if _, err := os.Stat(homeDir); err == nil {
+		leftovers = append(leftovers, homeDir)
+	}
+
+	// Check PHP-FPM pool files
+	for _, ver := range phpVersions {
+		poolFile := filepath.Join(a.phpConfigBaseDir, ver, "fpm", "pool.d", fmt.Sprintf("%s.conf", p.Username))
+		if _, err := os.Stat(poolFile); err == nil {
+			leftovers = append(leftovers, poolFile)
+		}
+		suspendedFile := poolFile + ".suspended"
+		if _, err := os.Stat(suspendedFile); err == nil {
+			leftovers = append(leftovers, suspendedFile)
+		}
+	}
+
+	// Check vhost files & symlinks
+	for _, domain := range p.Domains {
+		enabledPath := filepath.Join(a.vhostEnabledDir, fmt.Sprintf("%s.conf", domain))
+		if _, err := os.Lstat(enabledPath); err == nil {
+			leftovers = append(leftovers, enabledPath)
+		}
+		availPath := filepath.Join(a.vhostAvailableDir, fmt.Sprintf("%s.conf", domain))
+		if _, err := os.Stat(availPath); err == nil {
+			leftovers = append(leftovers, availPath)
+		}
+	}
+
+	// Scan vhost available dir for any remaining user vhost
+	if entries, err := os.ReadDir(a.vhostAvailableDir); err == nil {
+		userHomeStr := filepath.Join(a.homeBaseDir, p.Username)
+		userSockStr := fmt.Sprintf("-%s.sock", p.Username)
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".conf") {
+				continue
+			}
+			confPath := filepath.Join(a.vhostAvailableDir, entry.Name())
+			if data, err := os.ReadFile(confPath); err == nil {
+				content := string(data)
+				if strings.Contains(content, userHomeStr) || strings.Contains(content, userSockStr) {
+					leftovers = append(leftovers, confPath)
+				}
+			}
+		}
+	}
+
+	// Check SSHD match block
+	if _, err := os.Stat(sshdConf); err == nil {
+		leftovers = append(leftovers, sshdConf)
+	}
+
+	if len(leftovers) > 0 {
+		errMsg := fmt.Sprintf("leftover paths remain after termination: %s", strings.Join(leftovers, ", "))
+		logs = append(logs, "error: "+errMsg)
+		return &ActionResult{
+			Success: false,
+			Error:   errMsg,
+			Data: map[string]any{
+				"username":   p.Username,
+				"terminated": false,
+				"leftovers":  leftovers,
+			},
+			Logs: logs,
+		}, fmt.Errorf("%s", errMsg)
 	}
 
 	logs = append(logs, "account.terminate completed successfully")
@@ -263,6 +340,7 @@ func (a *AccountTerminateAction) Execute(ctx context.Context, payload []byte, dr
 			"username":    p.Username,
 			"terminated":  true,
 			"backup_path": backupPath,
+			"leftovers":   []string{},
 			"dry_run":     false,
 		},
 		Logs: logs,

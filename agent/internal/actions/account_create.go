@@ -389,40 +389,37 @@ func (a *AccountCreateAction) ensureDirectories(ctx context.Context, username, h
 	}
 
 	// 2. Subdirectories:
-	// public_html: 0755
-	// logs: 0750
-	// tmp: 0750
-	// backups: 0700
-	// .ssh: 0700
+	// public_html and its subdirectories: 0755 owner user:user
+	// logs: 0750 owner user:user
+	// tmp: 0750 owner user:user
+	// backups: 0750 owner user:user
+	// .ssh: 0700 owner user:user
 	subdirs := []struct {
-		name string
-		perm os.FileMode
+		name     string
+		dirPerm  os.FileMode
+		filePerm os.FileMode
 	}{
-		{"public_html", 0755},
-		{"logs", 0750},
-		{"tmp", 0750},
-		{"backups", 0700},
-		{".ssh", 0700},
+		{"public_html", 0755, 0644},
+		{"logs", 0750, 0640},
+		{"tmp", 0750, 0640},
+		{"backups", 0750, 0640},
+		{".ssh", 0700, 0600},
 	}
 
 	for _, sub := range subdirs {
 		dirPath := filepath.Join(homeDir, sub.name)
-		if err := os.MkdirAll(dirPath, sub.perm); err != nil {
+		if err := os.MkdirAll(dirPath, sub.dirPerm); err != nil {
 			return fmt.Errorf("creating %s: %w", dirPath, err)
 		}
-		if err := os.Chmod(dirPath, sub.perm); err != nil {
-			return fmt.Errorf("chmod %s: %w", dirPath, err)
+		if sub.name == "public_html" {
+			if err := a.enforcePublicHtmlPermissions(ctx, username, dirPath); err != nil {
+				return err
+			}
+		} else {
+			if err := a.enforceSubdirPermissions(ctx, username, dirPath, sub.dirPerm, sub.filePerm); err != nil {
+				return err
+			}
 		}
-		_ = a.executor.Run(ctx, "chmod", fmt.Sprintf("%04o", sub.perm), dirPath)
-		if err := a.executor.Run(ctx, "chown", fmt.Sprintf("%s:%s", username, username), dirPath); err != nil {
-			return fmt.Errorf("chown %s: %w", dirPath, err)
-		}
-	}
-
-	// 3. Ensure any existing subdirectories and files in public_html have correct permissions and ownership
-	publicHtml := filepath.Join(homeDir, "public_html")
-	if err := a.enforcePublicHtmlPermissions(ctx, username, publicHtml); err != nil {
-		return err
 	}
 
 	return nil
@@ -433,9 +430,6 @@ func (a *AccountCreateAction) enforcePublicHtmlPermissions(ctx context.Context, 
 		if err != nil {
 			return err
 		}
-		if path == publicHtml {
-			return nil
-		}
 		// Security: do not follow or chmod symlink targets outside public_html
 		if info.Mode()&os.ModeSymlink != 0 {
 			return nil
@@ -444,10 +438,38 @@ func (a *AccountCreateAction) enforcePublicHtmlPermissions(ctx context.Context, 
 			if err := os.Chmod(path, 0755); err != nil {
 				return fmt.Errorf("chmod %s: %w", path, err)
 			}
+			_ = a.executor.Run(ctx, "chmod", "0755", path)
 		} else {
 			if err := os.Chmod(path, 0644); err != nil {
 				return fmt.Errorf("chmod %s: %w", path, err)
 			}
+			_ = a.executor.Run(ctx, "chmod", "0644", path)
+		}
+		if err := a.executor.Run(ctx, "chown", fmt.Sprintf("%s:%s", username, username), path); err != nil {
+			return fmt.Errorf("chown %s: %w", path, err)
+		}
+		return nil
+	})
+}
+
+func (a *AccountCreateAction) enforceSubdirPermissions(ctx context.Context, username, dirPath string, dirPerm, filePerm os.FileMode) error {
+	return filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+		if info.IsDir() {
+			if err := os.Chmod(path, dirPerm); err != nil {
+				return fmt.Errorf("chmod %s: %w", path, err)
+			}
+			_ = a.executor.Run(ctx, "chmod", fmt.Sprintf("%04o", dirPerm), path)
+		} else {
+			if err := os.Chmod(path, filePerm); err != nil {
+				return fmt.Errorf("chmod %s: %w", path, err)
+			}
+			_ = a.executor.Run(ctx, "chmod", fmt.Sprintf("%04o", filePerm), path)
 		}
 		if err := a.executor.Run(ctx, "chown", fmt.Sprintf("%s:%s", username, username), path); err != nil {
 			return fmt.Errorf("chown %s: %w", path, err)
@@ -458,25 +480,19 @@ func (a *AccountCreateAction) enforcePublicHtmlPermissions(ctx context.Context, 
 
 func (a *AccountCreateAction) ensureDefaultIndex(ctx context.Context, username, homeDir, domain string) error {
 	indexPath := filepath.Join(homeDir, "public_html", "index.html")
-	if _, err := os.Stat(indexPath); err == nil {
-		if err := os.Chmod(indexPath, 0644); err != nil {
-			return fmt.Errorf("chmod %s: %w", indexPath, err)
+	if _, err := os.Stat(indexPath); errors.Is(err, os.ErrNotExist) {
+		indexContent := fmt.Sprintf("<!DOCTYPE html><html><head><title>Welcome to %s</title></head><body><h1>Welcome to %s</h1><p>Website is successfully provisioned.</p></body></html>", domain, domain)
+		if err := os.WriteFile(indexPath, []byte(indexContent), 0644); err != nil {
+			return fmt.Errorf("writing %s: %w", indexPath, err)
 		}
-		if err := a.executor.Run(ctx, "chown", fmt.Sprintf("%s:%s", username, username), indexPath); err != nil {
-			return fmt.Errorf("chown %s: %w", indexPath, err)
-		}
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
+	} else if err != nil {
 		return fmt.Errorf("checking %s: %w", indexPath, err)
 	}
 
-	indexContent := fmt.Sprintf("<!DOCTYPE html><html><head><title>Welcome to %s</title></head><body><h1>Welcome to %s</h1><p>Website is successfully provisioned.</p></body></html>", domain, domain)
-	if err := os.WriteFile(indexPath, []byte(indexContent), 0644); err != nil {
-		return fmt.Errorf("writing %s: %w", indexPath, err)
-	}
 	if err := os.Chmod(indexPath, 0644); err != nil {
 		return fmt.Errorf("chmod %s: %w", indexPath, err)
 	}
+	_ = a.executor.Run(ctx, "chmod", "0644", indexPath)
 	if err := a.executor.Run(ctx, "chown", fmt.Sprintf("%s:%s", username, username), indexPath); err != nil {
 		return fmt.Errorf("chown %s: %w", indexPath, err)
 	}
@@ -589,6 +605,15 @@ func (a *AccountCreateAction) resolveFpmBinary(version string) (string, error) {
 }
 
 func (a *AccountCreateAction) deployVhost(ctx context.Context, p AccountCreatePayload) error {
+	// Create the logs directory before writing the nginx vhost
+	logsDir := filepath.Join(a.homeBaseDir, p.Username, "logs")
+	if err := os.MkdirAll(logsDir, 0750); err != nil {
+		return fmt.Errorf("ensuring logs directory before vhost: %w", err)
+	}
+	_ = os.Chmod(logsDir, 0750)
+	_ = a.executor.Run(ctx, "chmod", "0750", logsDir)
+	_ = a.executor.Run(ctx, "chown", fmt.Sprintf("%s:%s", p.Username, p.Username), logsDir)
+
 	if err := os.MkdirAll(a.vhostAvailableDir, 0755); err != nil {
 		return fmt.Errorf("ensuring vhost available dir: %w", err)
 	}

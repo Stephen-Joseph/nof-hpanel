@@ -487,6 +487,27 @@ func TestAccountCreateDirectoryAndFilePermissionsAndOwnership(t *testing.T) {
 	}
 	_ = os.Chmod(logsDir, 0777)
 
+	// Pre-create backups and .ssh with non-standard permissions to test recursive repair
+	backupsDir := filepath.Join(homeDir, "backups")
+	if err := os.MkdirAll(backupsDir, 0700); err != nil {
+		t.Fatalf("failed creating backupsDir: %v", err)
+	}
+	_ = os.Chmod(backupsDir, 0700)
+	backupFile := filepath.Join(backupsDir, "archive.tar")
+	if err := os.WriteFile(backupFile, []byte("data"), 0600); err != nil {
+		t.Fatalf("failed writing backupFile: %v", err)
+	}
+
+	sshDir := filepath.Join(homeDir, ".ssh")
+	if err := os.MkdirAll(sshDir, 0777); err != nil {
+		t.Fatalf("failed creating sshDir: %v", err)
+	}
+	_ = os.Chmod(sshDir, 0777)
+	sshKeyFile := filepath.Join(sshDir, "authorized_keys")
+	if err := os.WriteFile(sshKeyFile, []byte("ssh-rsa test"), 0644); err != nil {
+		t.Fatalf("failed writing sshKeyFile: %v", err)
+	}
+
 	// Execute account.create
 	res, err := action.Execute(context.Background(), testPayload(), false)
 	if err != nil {
@@ -570,7 +591,25 @@ func TestAccountCreateDirectoryAndFilePermissionsAndOwnership(t *testing.T) {
 		t.Errorf("expected tmp mode 0750, got %04o", perm)
 	}
 
-	// 7. Assert chown was called for account_user:account_user on each path
+	// 7. Assert backups is 0750
+	fi, err = os.Stat(backupsDir)
+	if err != nil {
+		t.Fatalf("stat backupsDir failed: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0750 {
+		t.Errorf("expected backups mode 0750, got %04o", perm)
+	}
+
+	// 8. Assert .ssh is 0700
+	fi, err = os.Stat(sshDir)
+	if err != nil {
+		t.Fatalf("stat sshDir failed: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0700 {
+		t.Errorf("expected .ssh mode 0700, got %04o", perm)
+	}
+
+	// 9. Assert chown was called for account_user:account_user on each path
 	expectedChowns := []string{
 		"chown cust01:cust01 " + homeDir,
 		"chown cust01:cust01 " + publicHtml,
@@ -580,6 +619,8 @@ func TestAccountCreateDirectoryAndFilePermissionsAndOwnership(t *testing.T) {
 		"chown cust01:cust01 " + subFile,
 		"chown cust01:cust01 " + logsDir,
 		"chown cust01:cust01 " + tmpDir,
+		"chown cust01:cust01 " + backupsDir,
+		"chown cust01:cust01 " + sshDir,
 	}
 
 	for _, expected := range expectedChowns {
@@ -593,5 +634,54 @@ func TestAccountCreateDirectoryAndFilePermissionsAndOwnership(t *testing.T) {
 		if !found {
 			t.Errorf("expected command %q was not executed. Recorded commands:\n%s", expected, strings.Join(exec.commands, "\n"))
 		}
+	}
+}
+
+func TestAccountCreateLogsDirectoryCreatedBeforeVhost(t *testing.T) {
+	exec := &fakeCommandExecutor{
+		lookups: map[string]bool{
+			"php-fpm8.4": true,
+			"nginx":      true,
+			"systemctl":  true,
+		},
+	}
+	action := newTestAction(t, exec)
+	homeDir := filepath.Join(action.homeBaseDir, "cust01")
+	logsDir := filepath.Join(homeDir, "logs")
+
+	// Ensure logsDir does not exist initially
+	_ = os.RemoveAll(logsDir)
+
+	// Call deployVhost directly
+	payload := AccountCreatePayload{
+		Username:      "cust01",
+		PrimaryDomain: "cust01.example.com",
+		PHPVersion:    "8.4",
+	}
+	err := action.deployVhost(context.Background(), payload)
+	if err != nil {
+		t.Fatalf("deployVhost failed: %v", err)
+	}
+
+	// Assert logsDir was created before or during deployVhost with mode 0750
+	fi, err := os.Stat(logsDir)
+	if err != nil {
+		t.Fatalf("expected logsDir to exist after deployVhost, got err: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0750 {
+		t.Errorf("expected logsDir mode 0750, got %04o", perm)
+	}
+
+	// Verify chown was called on logsDir
+	expectedChown := "chown cust01:cust01 " + logsDir
+	found := false
+	for _, cmd := range exec.commands {
+		if cmd == expectedChown {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected %q was not executed", expectedChown)
 	}
 }
