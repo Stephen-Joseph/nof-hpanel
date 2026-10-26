@@ -120,6 +120,19 @@ func (a *AccountTerminateAction) Execute(ctx context.Context, payload []byte, dr
 		_ = exec.CommandContext(ctx, "systemctl", "daemon-reload").Run()
 	}
 
+	// Remove sshd match block
+	sshdConf := fmt.Sprintf("/etc/ssh/sshd_config.d/hpanel-%s.conf", p.Username)
+	if _, err := os.Stat(sshdConf); err == nil {
+		_ = os.Remove(sshdConf)
+		if runtime.GOOS == "linux" {
+			if out, err := exec.CommandContext(ctx, "sshd", "-t").CombinedOutput(); err == nil {
+				_ = exec.CommandContext(ctx, "systemctl", "reload", "ssh").Run()
+			} else {
+				logs = append(logs, fmt.Sprintf("sshd -t check warning after removing match block: %s", string(out)))
+			}
+		}
+	}
+
 	// Step 5: Remove user crontab
 	if runtime.GOOS == "linux" {
 		_ = exec.CommandContext(ctx, "crontab", "-u", p.Username, "-r").Run()

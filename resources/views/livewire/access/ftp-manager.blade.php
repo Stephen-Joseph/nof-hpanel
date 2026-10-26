@@ -1,6 +1,6 @@
 <div>
     <x-layout.page-header 
-        title="FTP / SFTP Accounts &middot; {{ $account->primary_domain }}" 
+        title="FTP / SFTP Accounts · {{ $account->primary_domain }}" 
         subtitle="Manage secondary SFTP sub-accounts restricted to specific website folders (ChrootDirectory)."
     >
         <x-slot:actions>
@@ -88,12 +88,24 @@
                         <span class="font-semibold text-main">SFTP (SSH File Transfer Protocol)</span>
                     </div>
                     <div>
-                        <span class="text-muted block mb-0.5">Server Host / IP</span>
-                        <span class="font-mono text-primary-500 font-semibold">{{ $account->server->private_ip }} ({{ $account->primary_domain }})</span>
+                        <span class="text-muted block mb-0.5">Host</span>
+                        @php
+                            $publicHost = !empty($account->server->public_ip) 
+                                ? trim(explode(',', $account->server->public_ip)[0]) 
+                                : $account->server->hostname;
+                            if ($publicHost === '127.0.0.1' || $publicHost === 'localhost' || empty($publicHost)) {
+                                $publicHost = $account->server->hostname;
+                            }
+                        @endphp
+                        <span class="font-mono text-primary-500 font-semibold">{{ $publicHost }}</span>
                     </div>
                     <div>
                         <span class="text-muted block mb-0.5">Port</span>
                         <span class="font-mono text-main">22</span>
+                    </div>
+                    <div>
+                        <span class="text-muted block mb-0.5">Primary Username</span>
+                        <span class="font-mono text-main">{{ $account->linux_username }}</span>
                     </div>
                     <div>
                         <span class="text-muted block mb-0.5">Client Support</span>

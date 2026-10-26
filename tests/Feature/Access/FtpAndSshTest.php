@@ -39,10 +39,16 @@ beforeEach(function () {
 });
 
 test('customer can view FTP and SSH management pages', function () {
+    $this->server->update(['public_ip' => '198.51.100.50,198.51.100.51']);
+
     $this->actingAs($this->customer1)
         ->get(route('accounts.ftp', $this->account1))
         ->assertOk()
-        ->assertSee('FTP / SFTP Accounts &middot; alicecorp.com', false);
+        ->assertSee('FTP / SFTP Accounts · alicecorp.com', false)
+        ->assertSee('198.51.100.50')
+        ->assertSee('alicecorp')
+        ->assertDontSee('127.0.0.1')
+        ->assertDontSee('10.0.0.10');
 
     $this->actingAs($this->customer1)
         ->get(route('accounts.ssh', $this->account1))

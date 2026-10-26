@@ -113,6 +113,7 @@ type AccountCreateAction struct {
 	vhostAvailableDir string
 	vhostEnabledDir   string
 	systemdConfigDir  string
+	sshdConfigDir     string
 	isLinux           bool
 }
 
@@ -120,11 +121,12 @@ func NewAccountCreateAction() *AccountCreateAction {
 	return &AccountCreateAction{
 		executor:          osCommandExecutor{},
 		homeBaseDir:       "/home",
-		tempDir:           "/tmp/panel-agent",
+		tempDir:           "/var/lib/panel-agent/tmp",
 		phpConfigBaseDir:  "/etc/php",
 		vhostAvailableDir: "/etc/nginx/sites-available",
 		vhostEnabledDir:   "/etc/nginx/sites-enabled",
 		systemdConfigDir:  "/etc/systemd/system",
+		sshdConfigDir:     "/etc/ssh/sshd_config.d",
 		isLinux:           runtime.GOOS == "linux",
 	}
 }
@@ -138,8 +140,14 @@ func NewAccountCreateActionForTest(executor commandExecutor, homeBaseDir, tempDi
 		vhostAvailableDir: vhostAvailableDir,
 		vhostEnabledDir:   vhostEnabledDir,
 		systemdConfigDir:  systemdConfigDir,
+		sshdConfigDir:     filepath.Join(filepath.Dir(tempDir), "etc", "ssh", "sshd_config.d"),
 		isLinux:           true,
 	}
+}
+
+func (a *AccountCreateAction) WithSshdConfigDir(dir string) *AccountCreateAction {
+	a.sshdConfigDir = dir
+	return a
 }
 
 func (a *AccountCreateAction) Name() string {
@@ -226,6 +234,7 @@ func (a *AccountCreateAction) Execute(ctx context.Context, payload []byte, dryRu
 			fmt.Sprintf("[dry-run] simulated quota apply: %d MB, %d inodes", p.StorageMB, p.Inodes),
 			fmt.Sprintf("[dry-run] rendered PHP-FPM pool for version %s (%d bytes)", p.PHPVersion, len(poolConfig)),
 			fmt.Sprintf("[dry-run] simulated Nginx vhost for %s", p.PrimaryDomain),
+			fmt.Sprintf("[dry-run] simulated sshd chroot match block: /etc/ssh/sshd_config.d/hpanel-%s.conf", p.Username),
 			fmt.Sprintf("[dry-run] simulated systemd slice limits: %d cores, %d MB RAM", p.CPUCores, p.MemoryLimitMB),
 		)
 
@@ -294,6 +303,11 @@ func (a *AccountCreateAction) Execute(ctx context.Context, payload []byte, dryRu
 		return a.stepFailure("vhost", err, logs)
 	}
 	logs = append(logs, fmt.Sprintf("deployed vhost for domain '%s'", p.PrimaryDomain))
+
+	if err := a.deploySshdConfig(ctx, p); err != nil {
+		return a.stepFailure("sftp_chroot", err, logs)
+	}
+	logs = append(logs, fmt.Sprintf("configured SFTP chroot match block for user '%s'", p.Username))
 
 	if err := a.applySystemdSlice(ctx, p); err != nil {
 		return a.stepFailure("systemd_slice", err, logs)
@@ -661,6 +675,42 @@ func (a *AccountCreateAction) applySystemdSlice(ctx context.Context, p AccountCr
 
 	if err := a.executor.Run(ctx, "systemctl", "daemon-reload"); err != nil {
 		return fmt.Errorf("systemd daemon-reload: %w", err)
+	}
+
+	return nil
+}
+
+func (a *AccountCreateAction) deploySshdConfig(ctx context.Context, p AccountCreatePayload) error {
+	sshdDir := a.sshdConfigDir
+	if sshdDir == "" {
+		sshdDir = "/etc/ssh/sshd_config.d"
+	}
+	if err := os.MkdirAll(sshdDir, 0755); err != nil {
+		return fmt.Errorf("failed to create sshd_config.d: %w", err)
+	}
+
+	confPath := filepath.Join(sshdDir, fmt.Sprintf("hpanel-%s.conf", p.Username))
+	content := fmt.Sprintf(`# HPanel SFTP Chroot configuration for %s
+Match User %s
+    ChrootDirectory /home/%s
+    ForceCommand internal-sftp
+    AllowTcpForwarding no
+    X11Forwarding no
+`, p.Username, p.Username, p.Username)
+
+	if err := atomicWriteFile(confPath, []byte(content), 0644, 0, 0); err != nil {
+		return fmt.Errorf("failed to write sshd match block: %w", err)
+	}
+
+	// Validate with sshd -t
+	if out, err := a.executor.CombinedOutput(ctx, "sshd", "-t"); err != nil {
+		_ = os.Remove(confPath)
+		return fmt.Errorf("sshd -t validation failed: %s: %w", string(out), err)
+	}
+
+	// Reload ssh service
+	if err := a.executor.Run(ctx, "systemctl", "reload", "ssh"); err != nil {
+		_ = a.executor.Run(ctx, "systemctl", "reload", "sshd")
 	}
 
 	return nil

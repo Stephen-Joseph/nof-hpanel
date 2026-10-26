@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 )
 
 // --- SSH Key Add Action ---
@@ -156,9 +158,24 @@ type SftpAccountCreatePayload struct {
 	Password   string `json:"password,omitempty"`
 }
 
-type SftpAccountCreateAction struct{}
+type SftpAccountCreateAction struct {
+	executor      commandExecutor
+	sshdConfigDir string
+}
 
-func NewSftpAccountCreateAction() *SftpAccountCreateAction { return &SftpAccountCreateAction{} }
+func NewSftpAccountCreateAction() *SftpAccountCreateAction {
+	return &SftpAccountCreateAction{
+		executor:      osCommandExecutor{},
+		sshdConfigDir: "/etc/ssh/sshd_config.d",
+	}
+}
+
+func NewSftpAccountCreateActionForTest(executor commandExecutor, sshdConfigDir string) *SftpAccountCreateAction {
+	return &SftpAccountCreateAction{
+		executor:      executor,
+		sshdConfigDir: sshdConfigDir,
+	}
+}
 
 func (a *SftpAccountCreateAction) Name() string { return "sftp.account_create" }
 
@@ -189,6 +206,61 @@ func (a *SftpAccountCreateAction) Execute(ctx context.Context, payload []byte, d
 
 	logs := []string{fmt.Sprintf("configuring SFTP sub-account '%s' restricted to %s", p.Subuser, safeHomedir)}
 
+	if dryRun {
+		logs = append(logs, fmt.Sprintf("[dry-run] simulated sshd match block for subuser %s", p.Subuser))
+		return &ActionResult{
+			Success: true,
+			Data: map[string]any{
+				"parent_user": p.ParentUser,
+				"subuser":     p.Subuser,
+				"homedir":     safeHomedir,
+				"configured":  true,
+				"dry_run":     true,
+			},
+			Logs: logs,
+		}, nil
+	}
+
+	sshdDir := a.sshdConfigDir
+	if sshdDir == "" {
+		sshdDir = "/etc/ssh/sshd_config.d"
+	}
+	if err := os.MkdirAll(sshdDir, 0755); err != nil {
+		return &ActionResult{Success: false, Error: err.Error()}, err
+	}
+
+	confPath := filepath.Join(sshdDir, fmt.Sprintf("hpanel-subuser-%s.conf", p.Subuser))
+	content := fmt.Sprintf(`# HPanel SFTP Chroot configuration for subuser %s
+Match User %s
+    ChrootDirectory %s
+    ForceCommand internal-sftp
+    AllowTcpForwarding no
+    X11Forwarding no
+`, p.Subuser, p.Subuser, safeHomedir)
+
+	if err := atomicWriteFile(confPath, []byte(content), 0644, 0, 0); err != nil {
+		return &ActionResult{Success: false, Error: err.Error()}, err
+	}
+
+	executor := a.executor
+	if executor == nil {
+		executor = osCommandExecutor{}
+	}
+
+	if out, err := executor.CombinedOutput(ctx, "sshd", "-t"); err != nil {
+		_ = os.Remove(confPath)
+		return &ActionResult{
+			Success: false,
+			Error:   fmt.Sprintf("sshd -t validation failed: %s", string(out)),
+		}, fmt.Errorf("sshd -t validation failed: %s: %w", string(out), err)
+	}
+
+	if err := executor.Run(ctx, "systemctl", "reload", "ssh"); err != nil {
+		_ = executor.Run(ctx, "systemctl", "reload", "sshd")
+	}
+
+	logs = append(logs, fmt.Sprintf("sshd match block configured and reloaded for subuser '%s'", p.Subuser))
+
 	return &ActionResult{
 		Success: true,
 		Data: map[string]any{
@@ -196,7 +268,7 @@ func (a *SftpAccountCreateAction) Execute(ctx context.Context, payload []byte, d
 			"subuser":     p.Subuser,
 			"homedir":     safeHomedir,
 			"configured":  true,
-			"dry_run":     dryRun,
+			"dry_run":     false,
 		},
 		Logs: logs,
 	}, nil
