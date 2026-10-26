@@ -113,7 +113,6 @@
                                 <option value="{{ $dom->id }}">{{ $dom->domain }}</option>
                             @endforeach
                         </x-ui.select>
-                        @error('domain_id') <span class="text-rose-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">

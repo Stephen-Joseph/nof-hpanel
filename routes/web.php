@@ -211,11 +211,21 @@ Route::middleware('auth')->group(function () {
             return view('api-integration.docs');
         })->name('docs');
     });
+
+    // OpenAPI Specification
+    Route::get('/docs/openapi.yaml', function () {
+        $path = base_path('docs/openapi.yaml');
+        abort_unless(file_exists($path), 404);
+
+        return response(file_get_contents($path), 200, [
+            'Content-Type' => 'application/yaml',
+        ]);
+    })->name('docs.openapi');
 });
 
 // UI Kit Demo Route (local & testing environments only)
-if (app()->environment('local', 'testing')) {
-    Route::get('/ui-kit', function () {
-        return view('ui-kit');
-    })->name('ui-kit');
-}
+Route::get('/ui-kit', function () {
+    abort_unless(app()->environment('local', 'testing'), 404);
+
+    return view('ui-kit');
+})->name('ui-kit');

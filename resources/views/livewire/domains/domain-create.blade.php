@@ -22,7 +22,6 @@
                         </option>
                     @endforeach
                 </x-ui.select>
-                @error('account_id') <span class="text-xs text-rose-500 block mt-1 ml-2">{{ $message }}</span> @enderror
             </div>
 
             <!-- Domain Name & Type -->
@@ -43,7 +42,6 @@
                         <option value="addon">Addon Domain</option>
                         <option value="subdomain">Subdomain</option>
                     </x-ui.select>
-                    @error('type') <span class="text-xs text-rose-500 block mt-1 ml-2">{{ $message }}</span> @enderror
                 </div>
             </div>
 
@@ -68,7 +66,6 @@
                         <option value="wordpress">WordPress (Permalinks, upload protection, xmlrpc lock)</option>
                         <option value="static-spa">Static / SPA (HTML/JS, no PHP, 30d asset cache)</option>
                     </x-ui.select>
-                    @error('app_profile') <span class="text-xs text-rose-500 block mt-1 ml-2">{{ $message }}</span> @enderror
                 </div>
 
                 <div>
@@ -78,7 +75,6 @@
                         <option value="8.2">PHP 8.2</option>
                         <option value="8.1">PHP 8.1</option>
                     </x-ui.select>
-                    @error('php_version') <span class="text-xs text-rose-500 block mt-1 ml-2">{{ $message }}</span> @enderror
                 </div>
             </div>
 

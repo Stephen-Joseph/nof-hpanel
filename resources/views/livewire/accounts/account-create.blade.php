@@ -57,7 +57,6 @@
                         </option>
                     @endforeach
                 </x-ui.select>
-                @error('server_id') <span class="text-xs text-rose-500 block mt-1">{{ $message }}</span> @enderror
             </div>
 
             <!-- Package selection -->
@@ -71,7 +70,6 @@
                         </option>
                     @endforeach
                 </x-ui.select>
-                @error('package_id') <span class="text-xs text-rose-500 block mt-1">{{ $message }}</span> @enderror
             </div>
         </x-ui.card>
 

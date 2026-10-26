@@ -268,7 +268,6 @@
                                         <option value="{{ $d->name }}">{{ $d->name }}</option>
                                     @endforeach
                                 </x-ui.select>
-                                @error('restoreTargetDb') <span class="text-rose-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                             </div>
                         @endif
 

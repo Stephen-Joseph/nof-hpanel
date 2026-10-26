@@ -34,7 +34,6 @@
                                 <option value="{{ $ver }}">PHP {{ $ver }} (Ondřej Surý PPA)</option>
                             @endforeach
                         </x-ui.select>
-                        @error('php_version') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
                     <div class="pt-3 border-t border-border space-y-2.5">
@@ -129,7 +128,6 @@
                                 <option value="512M">512 MB</option>
                                 <option value="1024M">1024 MB (1 GB)</option>
                             </x-ui.select>
-                            @error('memory_limit') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
                             <p class="text-[11px] text-muted mt-1">Maximum RAM allocated to a single PHP script execution.</p>
                         </div>
 
@@ -142,7 +140,6 @@
                                 <option value="120">120 seconds (2 minutes)</option>
                                 <option value="300">300 seconds (5 minutes)</option>
                             </x-ui.select>
-                            @error('max_execution_time') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
                             <p class="text-[11px] text-muted mt-1">Timeout for long-running PHP requests.</p>
                         </div>
 
@@ -156,7 +153,6 @@
                                 <option value="128M">128 MB</option>
                                 <option value="256M">256 MB</option>
                             </x-ui.select>
-                            @error('upload_max_filesize') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
                         </div>
 
                         <!-- post_max_size -->
@@ -169,7 +165,6 @@
                                 <option value="128M">128 MB</option>
                                 <option value="256M">256 MB</option>
                             </x-ui.select>
-                            @error('post_max_size') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
                         </div>
 
                         <!-- display_errors -->
@@ -179,7 +174,6 @@
                                 <option value="off">Off (Recommended for production - logs to error_log)</option>
                                 <option value="on">On (Development and debugging only)</option>
                             </x-ui.select>
-                            @error('display_errors') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
                             <p class="text-[11px] text-muted mt-1">Leaving display_errors on in production can leak database credentials and stack traces.</p>
                         </div>
                     </div>

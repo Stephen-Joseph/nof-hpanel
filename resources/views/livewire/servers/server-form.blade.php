@@ -57,7 +57,6 @@
                         <option value="{{ $st->value }}">{{ $st->label() }}</option>
                     @endforeach
                 </x-ui.select>
-                @error('status') <span class="text-xs text-rose-500 block mt-1">{{ $message }}</span> @enderror
             </div>
         </x-ui.card>
 

@@ -83,7 +83,6 @@
                             <option value="301">301 (Permanent)</option>
                             <option value="302">302 (Temporary)</option>
                         </x-ui.select>
-                        @error('newStatusCode') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
                     <div class="sm:col-span-12 flex justify-end pt-2">
