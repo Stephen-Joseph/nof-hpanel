@@ -1,14 +1,19 @@
 package actions
 
 import (
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -701,8 +706,303 @@ func (a *DbDumpAction) Execute(ctx context.Context, payload []byte, dryRun bool)
 }
 
 // -------------------------------------------------------------
+// SSO Helpers & Actions: db.sso_create, db.sso_revoke
+// -------------------------------------------------------------
+
+func generatePmaSsoCredentials() (string, string, error) {
+	const userCharset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	userBytes := make([]byte, 10)
+	if _, err := rand.Read(userBytes); err != nil {
+		return "", "", fmt.Errorf("failed to generate random user bytes: %w", err)
+	}
+	for i := range userBytes {
+		userBytes[i] = userCharset[int(userBytes[i])%len(userCharset)]
+	}
+	pmaUser := "pma_" + string(userBytes)
+
+	const passCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	passBytes := make([]byte, 24)
+	if _, err := rand.Read(passBytes); err != nil {
+		return "", "", fmt.Errorf("failed to generate random password bytes: %w", err)
+	}
+	for i := range passBytes {
+		passBytes[i] = passCharset[int(passBytes[i])%len(passCharset)]
+	}
+	pmaPass := string(passBytes)
+
+	return pmaUser, pmaPass, nil
+}
+
+// -------------------------------------------------------------
+// Action: db.sso_create
+// -------------------------------------------------------------
+
+type DbSsoCreatePayload struct {
+	AccountUsername string `json:"account_username"`
+	Database        string `json:"database,omitempty"`
+}
+
+type DbSsoCreateAction struct{}
+
+func NewDbSsoCreateAction() *DbSsoCreateAction {
+	return &DbSsoCreateAction{}
+}
+
+func (a *DbSsoCreateAction) Name() string {
+	return "db.sso_create"
+}
+
+func (a *DbSsoCreateAction) Validate(payload []byte) error {
+	var p DbSsoCreatePayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return fmt.Errorf("invalid json payload: %w", err)
+	}
+
+	if err := ValidateLinuxUsername(p.AccountUsername); err != nil {
+		return fmt.Errorf("invalid account_username: %w", err)
+	}
+
+	if p.Database != "" {
+		if err := ValidateDatabaseName(p.AccountUsername, p.Database); err != nil {
+			return fmt.Errorf("invalid database: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (a *DbSsoCreateAction) Execute(ctx context.Context, payload []byte, dryRun bool) (*ActionResult, error) {
+	var p DbSsoCreatePayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return &ActionResult{Success: false, Error: err.Error()}, err
+	}
+
+	if err := ValidateLinuxUsername(p.AccountUsername); err != nil {
+		return &ActionResult{Success: false, Error: err.Error()}, err
+	}
+	if p.Database != "" {
+		if err := ValidateDatabaseName(p.AccountUsername, p.Database); err != nil {
+			return &ActionResult{Success: false, Error: err.Error()}, err
+		}
+	}
+
+	pmaUser, pmaPass, err := generatePmaSsoCredentials()
+	if err != nil {
+		return &ActionResult{Success: false, Error: err.Error()}, err
+	}
+
+	logs := []string{
+		fmt.Sprintf("creating temporary MariaDB SSO user for account '%s'", p.AccountUsername),
+	}
+
+	if dryRun || runtime.GOOS != "linux" {
+		logs = append(logs, fmt.Sprintf("granted ALL on `%s\\_%%`.* to '%s'@'localhost' (simulated)", p.AccountUsername, pmaUser))
+		return &ActionResult{
+			Success: true,
+			Data: map[string]any{
+				"db_user":     pmaUser,
+				"db_password": pmaPass,
+				"database":    p.Database,
+				"dry_run":     true,
+			},
+			Logs: logs,
+		}, nil
+	}
+
+	// Strictly grant only on the account's database prefix pattern <account>\_%
+	// Do not grant global privileges or SHOW DATABASES. Limit connections to 2.
+	sql := fmt.Sprintf(
+		"CREATE USER IF NOT EXISTS '%s'@'localhost' IDENTIFIED BY '%s'; "+
+			"GRANT ALL ON `%s\\_%%`.* TO '%s'@'localhost' WITH MAX_USER_CONNECTIONS 2; "+
+			"FLUSH PRIVILEGES;",
+		pmaUser, pmaPass, p.AccountUsername, pmaUser,
+	)
+
+	if _, err := runMariaDbSql(ctx, sql, false); err != nil {
+		return &ActionResult{Success: false, Error: err.Error(), Logs: logs}, err
+	}
+
+	logs = append(logs, fmt.Sprintf("granted ALL on `%s\\_%%`.* to temporary user '%s'@'localhost'", p.AccountUsername, pmaUser))
+
+	return &ActionResult{
+		Success: true,
+		Data: map[string]any{
+			"db_user":     pmaUser,
+			"db_password": pmaPass,
+			"database":    p.Database,
+		},
+		Logs: logs,
+	}, nil
+}
+
+// -------------------------------------------------------------
+// Action: db.sso_revoke
+// -------------------------------------------------------------
+
+var pmaUserPattern = regexp.MustCompile(`^pma_[a-zA-Z0-9]{6,24}$`)
+
+type DbSsoRevokePayload struct {
+	DbUser string `json:"db_user"`
+}
+
+type DbSsoRevokeAction struct{}
+
+func NewDbSsoRevokeAction() *DbSsoRevokeAction {
+	return &DbSsoRevokeAction{}
+}
+
+func (a *DbSsoRevokeAction) Name() string {
+	return "db.sso_revoke"
+}
+
+func (a *DbSsoRevokeAction) Validate(payload []byte) error {
+	var p DbSsoRevokePayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return fmt.Errorf("invalid json payload: %w", err)
+	}
+
+	if !pmaUserPattern.MatchString(p.DbUser) {
+		return errors.New("invalid db_user: must match ^pma_[a-zA-Z0-9]{6,24}$")
+	}
+
+	return nil
+}
+
+func (a *DbSsoRevokeAction) Execute(ctx context.Context, payload []byte, dryRun bool) (*ActionResult, error) {
+	var p DbSsoRevokePayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return &ActionResult{Success: false, Error: err.Error()}, err
+	}
+
+	if !pmaUserPattern.MatchString(p.DbUser) {
+		return &ActionResult{Success: false, Error: "invalid db_user"}, errors.New("invalid db_user")
+	}
+
+	logs := []string{fmt.Sprintf("revoking temporary MariaDB SSO user '%s'", p.DbUser)}
+
+	if dryRun || runtime.GOOS != "linux" {
+		logs = append(logs, "[dry-run] simulated drop temporary pma user")
+		return &ActionResult{
+			Success: true,
+			Data: map[string]any{
+				"db_user": p.DbUser,
+				"revoked": true,
+				"dry_run": true,
+			},
+			Logs: logs,
+		}, nil
+	}
+
+	sql := fmt.Sprintf("DROP USER IF EXISTS '%s'@'localhost'; FLUSH PRIVILEGES;", p.DbUser)
+	if _, err := runMariaDbSql(ctx, sql, false); err != nil {
+		return &ActionResult{Success: false, Error: err.Error(), Logs: logs}, err
+	}
+
+	logs = append(logs, fmt.Sprintf("successfully dropped temporary user '%s'@'localhost'", p.DbUser))
+	return &ActionResult{
+		Success: true,
+		Data: map[string]any{
+			"db_user": p.DbUser,
+			"revoked": true,
+		},
+		Logs: logs,
+	}, nil
+}
+
+// -------------------------------------------------------------
 // Action: db.import
 // -------------------------------------------------------------
+
+const MaxImportSizeBytes int64 = 500 * 1024 * 1024 // 500 MB
+
+var (
+	reForbiddenCreateUser   = regexp.MustCompile(`(?i)^\s*CREATE\s+USER\b`)
+	reForbiddenGrant        = regexp.MustCompile(`(?i)^\s*GRANT\s+`)
+	reForbiddenDropDatabase = regexp.MustCompile(`(?i)^\s*DROP\s+DATABASE\s+(?:IF\s+EXISTS\s+)?[\x60"']?([a-zA-Z0-9_]+)[\x60"']?`)
+	reForbiddenUseDatabase  = regexp.MustCompile(`(?i)^\s*USE\s+[\x60"']?([a-zA-Z0-9_]+)[\x60"']?`)
+)
+
+func checkSqlLineAllowed(line string, targetDb string) error {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "--") || strings.HasPrefix(trimmed, "#") {
+		return nil
+	}
+
+	if reForbiddenCreateUser.MatchString(trimmed) {
+		return errors.New("forbidden SQL statement: CREATE USER is not allowed")
+	}
+	if reForbiddenGrant.MatchString(trimmed) {
+		return errors.New("forbidden SQL statement: GRANT is not allowed")
+	}
+	if m := reForbiddenDropDatabase.FindStringSubmatch(trimmed); len(m) > 1 {
+		db := m[1]
+		if db != targetDb {
+			return fmt.Errorf("forbidden SQL statement: DROP DATABASE on unauthorized database '%s'", db)
+		}
+	}
+	if m := reForbiddenUseDatabase.FindStringSubmatch(trimmed); len(m) > 1 {
+		db := m[1]
+		if db != targetDb {
+			return fmt.Errorf("forbidden SQL statement: USE on unauthorized database '%s'", db)
+		}
+	}
+	return nil
+}
+
+func streamAndValidateSql(ctx context.Context, src io.Reader, dst io.Writer, targetDb string, maxSize int64) error {
+	br := bufio.NewReader(src)
+	var totalBytes int64
+	inLongLine := false
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		line, isPrefix, err := br.ReadLine()
+		if len(line) > 0 {
+			totalBytes += int64(len(line))
+			if totalBytes > maxSize {
+				return fmt.Errorf("SQL dump exceeds maximum allowed size of %d MB", maxSize/(1024*1024))
+			}
+
+			// Validate line if it starts a statement
+			if !inLongLine {
+				if errCheck := checkSqlLineAllowed(string(line), targetDb); errCheck != nil {
+					return errCheck
+				}
+			}
+
+			if _, wErr := dst.Write(line); wErr != nil {
+				return wErr
+			}
+		}
+
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return err
+		}
+
+		if isPrefix {
+			inLongLine = true
+		} else {
+			inLongLine = false
+			totalBytes++
+			if totalBytes > maxSize {
+				return fmt.Errorf("SQL dump exceeds maximum allowed size of %d MB", maxSize/(1024*1024))
+			}
+			if _, wErr := dst.Write([]byte("\n")); wErr != nil {
+				return wErr
+			}
+		}
+	}
+
+	return nil
+}
 
 type DbImportPayload struct {
 	Username  string `json:"username"`
@@ -749,17 +1049,59 @@ func (a *DbImportAction) Execute(ctx context.Context, payload []byte, dryRun boo
 
 	userHome := fmt.Sprintf("/home/%s", p.Username)
 	cleanInput := filepath.Clean(p.InputFile)
-	if !strings.HasPrefix(cleanInput, userHome) {
+	if !strings.HasPrefix(cleanInput, userHome+"/") && cleanInput != userHome {
 		return &ActionResult{
 			Success: false,
 			Error:   fmt.Sprintf("input file '%s' must reside inside customer home '%s'", cleanInput, userHome),
 		}, errors.New("unauthorized input file path")
 	}
 
+	// Verify symlinks do not escape customer home
+	if realPath, err := filepath.EvalSymlinks(cleanInput); err == nil {
+		if !strings.HasPrefix(realPath, userHome+"/") && realPath != userHome {
+			return &ActionResult{
+				Success: false,
+				Error:   fmt.Sprintf("symlink input file '%s' resolves outside customer home", cleanInput),
+			}, errors.New("symlink traversal detected")
+		}
+	}
+
 	logs := []string{fmt.Sprintf("importing SQL dump '%s' into database '%s'", cleanInput, p.DbName)}
 
+	fi, err := os.Stat(cleanInput)
+	if err != nil {
+		return &ActionResult{Success: false, Error: fmt.Sprintf("cannot open import file: %v", err), Logs: logs}, err
+	}
+	if fi.Size() > MaxImportSizeBytes {
+		return &ActionResult{
+			Success: false,
+			Error:   fmt.Sprintf("input file size (%d bytes) exceeds maximum limit of 500 MB", fi.Size()),
+			Logs:    logs,
+		}, errors.New("file size limit exceeded")
+	}
+
+	inFile, err := os.Open(cleanInput)
+	if err != nil {
+		return &ActionResult{Success: false, Error: fmt.Sprintf("cannot open import file: %v", err), Logs: logs}, err
+	}
+	defer inFile.Close()
+
 	if dryRun || runtime.GOOS != "linux" {
-		logs = append(logs, "[dry-run] simulated mysql import")
+		var checkReader io.Reader = inFile
+		if strings.HasSuffix(strings.ToLower(cleanInput), ".gz") {
+			gzReader, gzErr := gzip.NewReader(inFile)
+			if gzErr != nil {
+				return &ActionResult{Success: false, Error: fmt.Sprintf("cannot decompress gzip file: %v", gzErr), Logs: logs}, gzErr
+			}
+			defer gzReader.Close()
+			checkReader = gzReader
+		}
+		var nullBuf bytes.Buffer
+		if err := streamAndValidateSql(ctx, checkReader, &nullBuf, p.DbName, MaxImportSizeBytes); err != nil {
+			return &ActionResult{Success: false, Error: err.Error(), Logs: logs}, err
+		}
+
+		logs = append(logs, "[dry-run] simulated mysql import with restricted user")
 		return &ActionResult{
 			Success: true,
 			Data: map[string]any{
@@ -771,28 +1113,83 @@ func (a *DbImportAction) Execute(ctx context.Context, payload []byte, dryRun boo
 		}, nil
 	}
 
-	inFile, err := os.Open(cleanInput)
+	// Set a 15-minute execution timeout for database import
+	importCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+
+	// Create temporary restricted MariaDB user with access strictly on p.DbName
+	tmpUser, tmpPass, err := generatePmaSsoCredentials()
 	if err != nil {
-		return &ActionResult{Success: false, Error: fmt.Sprintf("cannot open import file: %v", err), Logs: logs}, err
+		return &ActionResult{Success: false, Error: fmt.Sprintf("failed to generate import credentials: %v", err), Logs: logs}, err
 	}
-	defer inFile.Close()
+	tmpUser = "imp_" + tmpUser[4:]
 
-	cnfPath := "/etc/mysql/debian.cnf"
-	var importCmd *exec.Cmd
-	if _, err := os.Stat(cnfPath); err == nil {
-		importCmd = exec.CommandContext(ctx, "mysql", "--defaults-file="+cnfPath, p.DbName)
-	} else {
-		importCmd = exec.CommandContext(ctx, "mysql", p.DbName)
+	createUserSql := fmt.Sprintf(
+		"CREATE USER IF NOT EXISTS '%s'@'localhost' IDENTIFIED BY '%s'; "+
+			"GRANT ALL ON `%s`.* TO '%s'@'localhost'; "+
+			"FLUSH PRIVILEGES;",
+		tmpUser, tmpPass, p.DbName, tmpUser,
+	)
+	if _, err := runMariaDbSql(importCtx, createUserSql, false); err != nil {
+		return &ActionResult{Success: false, Error: fmt.Sprintf("failed to provision import user: %v", err), Logs: logs}, err
 	}
 
-	importCmd.Stdin = inFile
+	// Create temporary client cnf file with 0600 mode
+	tempCnf, err := os.CreateTemp("", "hpanel-imp-*.cnf")
+	if err != nil {
+		cleanupSql := fmt.Sprintf("DROP USER IF EXISTS '%s'@'localhost'; FLUSH PRIVILEGES;", tmpUser)
+		_, _ = runMariaDbSql(context.Background(), cleanupSql, false)
+		return &ActionResult{Success: false, Error: fmt.Sprintf("failed to create temporary mysql cnf: %v", err), Logs: logs}, err
+	}
+	tempCnfPath := tempCnf.Name()
+	_ = os.Chmod(tempCnfPath, 0600)
+	cnfContent := fmt.Sprintf("[client]\nuser=%s\npassword=%s\nhost=127.0.0.1\n", tmpUser, tmpPass)
+	_, _ = tempCnf.WriteString(cnfContent)
+	_ = tempCnf.Close()
+
+	defer func() {
+		_ = os.Remove(tempCnfPath)
+		cleanupSql := fmt.Sprintf("DROP USER IF EXISTS '%s'@'localhost'; FLUSH PRIVILEGES;", tmpUser)
+		_, _ = runMariaDbSql(context.Background(), cleanupSql, false)
+	}()
+
+	var sqlReader io.Reader = inFile
+	if strings.HasSuffix(strings.ToLower(cleanInput), ".gz") {
+		gzReader, err := gzip.NewReader(inFile)
+		if err != nil {
+			return &ActionResult{Success: false, Error: fmt.Sprintf("cannot decompress gzip file: %v", err), Logs: logs}, err
+		}
+		defer gzReader.Close()
+		sqlReader = gzReader
+	}
+
+	importCmd := exec.CommandContext(importCtx, "mysql", "--defaults-file="+tempCnfPath, p.DbName)
+	pr, pw := io.Pipe()
+	importCmd.Stdin = pr
 	var stderr bytes.Buffer
 	importCmd.Stderr = &stderr
 
+	go func() {
+		err := streamAndValidateSql(importCtx, sqlReader, pw, p.DbName, MaxImportSizeBytes)
+		if err != nil {
+			_ = pw.CloseWithError(err)
+		} else {
+			_ = pw.Close()
+		}
+	}()
+
 	if err := importCmd.Run(); err != nil {
+		errOutput := strings.TrimSpace(stderr.String())
+		if errOutput == "" {
+			errOutput = err.Error()
+		}
+		// Truncate error output to 500 characters
+		if len(errOutput) > 500 {
+			errOutput = errOutput[:500] + "..."
+		}
 		return &ActionResult{
 			Success: false,
-			Error:   fmt.Sprintf("mysql import failed: %v: %s", err, strings.TrimSpace(stderr.String())),
+			Error:   fmt.Sprintf("mysql import failed: %s", errOutput),
 			Logs:    logs,
 		}, err
 	}

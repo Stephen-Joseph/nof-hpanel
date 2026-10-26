@@ -25,12 +25,22 @@ Every database and database user created by an account must adhere to strict pre
 - **Zero Cleartext Exposure in Process Tables**: SQL commands containing user credentials or passwords are fed into the MariaDB client via `cmd.Stdin` pipes. Passwords never appear as command-line arguments in `ps aux` or process tables.
 
 ### 2.3 Single-Use Signed phpMyAdmin SSO
-- Database users can initiate single-sign-on sessions into phpMyAdmin or Adminer.
-- The panel issues a cryptographically random, 60-character token with a 60-second time-to-live (`expires_at`).
-- Upon first use, the token is permanently marked consumed (`used_at = now()`). Any replay or second access attempt is immediately rejected with HTTP 403 Forbidden.
-- The SSO token stores the authorized `database_user_id` and optional `target_db`, preventing customers from pivoting into unauthorized databases.
+- Database users and hosting accounts can initiate one-click single-sign-on sessions into phpMyAdmin.
+- **Token Generation**: The panel issues a cryptographically random, 64-character hexadecimal token (32 random bytes) expiring in 60 seconds (`expires_at`), stored hashed with SHA-256 in `pma_sso_tokens`.
+- **Browser Redirect**: Browser redirects to `https://pma.nexorafox.in/signon.php?token=<raw_token>`.
+- **Internal Loopback Redemption**: phpMyAdmin's `signon.php` calls `POST /internal/pma/redeem` on the panel via `127.0.0.1` signed with `PANEL_PMA_SHARED_SECRET` (HMAC-SHA256 over timestamp + token, 30s skew).
+- **Temporary MariaDB User**: The agent provisions a temporary MariaDB user `pma_<random>` with `MAX_USER_CONNECTIONS 2` and `GRANT ALL` strictly on `<account>\_%`.* (no global privileges or `SHOW DATABASES`).
+- **Session Tracking & Pruning**: The session is recorded in `pma_sso_sessions`. A scheduled job (`PrunePmaSsoSessionsJob`) runs every 10 minutes to automatically drop sessions older than 30 minutes via `db.sso_revoke`.
+- **Single-Use Replay Protection**: Upon first use, the token is permanently marked consumed (`used_at = now()`). Any replay or second access attempt is immediately rejected with HTTP 403 Forbidden.
 
-### 2.4 Backup Path Confinement
+### 2.4 SQL Import & Security Hardening
+- **Stream Processing**: The agent streams SQL dumps (`.sql` and `.sql.gz`) over `stdin` directly into `mysql`.
+- **Restricted Execution**: The import executes under an isolated, temporary MariaDB user with access strictly limited to the target database (never executed as root).
+- **Statement Rejection**: The Go agent scans the SQL stream and rejects dumps containing `CREATE USER`, `GRANT`, `DROP DATABASE` targeting unauthorized databases, or `USE` targeting databases other than the target.
+- **Resource Constraints**: Dumps are enforced to a 500 MB limit with a 15-minute timeout. Error outputs are truncated to 500 characters.
+- **Path Confinement**: Dumps must reside strictly inside the customer home directory (`/home/<username>/`). Symlinks pointing outside the home directory are rejected.
+
+### 2.5 Backup Path Confinement
 - Database dumps initiated via `db.dump` must strictly write inside `/home/<username>/backups/`.
 - File paths are normalized with `filepath.Clean` and verified to reside inside the account's backup directory.
 
@@ -48,8 +58,10 @@ Every database and database user created by an account must adhere to strict pre
 | `dbuser.revoke` | `username`, `db_user`, `db_name`, `remote_host` | Revokes all privileges on `<db_name>.*` from user. |
 | `dbuser.drop` | `username`, `db_user`, `remote_host` | Deletes database user idempotently. |
 | `db.dump` | `username`, `db_name`, `output_file` | Exports database to `/home/<username>/backups/` using `mysqldump`. |
-| `db.import` | `username`, `db_name`, `input_file` | Imports SQL dump file safely into target database. |
+| `db.import` | `username`, `db_name`, `input_file` | Streams SQL or gzipped dump under restricted user, enforcing 500 MB limit, timeouts, and statement allowlists. |
 | `db.list_usage` | `username` | Queries `information_schema.tables` to calculate storage in bytes per database. |
+| `db.sso_create` | `account_username`, `database` | Provisions temporary MariaDB user with `MAX_USER_CONNECTIONS 2` and grant strictly on `<account>\_%`.*. |
+| `db.sso_revoke` | `db_user` | Drops temporary MariaDB SSO user. |
 
 ---
 

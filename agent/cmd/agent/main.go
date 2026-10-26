@@ -132,6 +132,8 @@ func main() {
 	registry.Register(actions.NewDbDumpAction())
 	registry.Register(actions.NewDbImportAction())
 	registry.Register(actions.NewDbListUsageAction())
+	registry.Register(actions.NewDbSsoCreateAction())
+	registry.Register(actions.NewDbSsoRevokeAction())
 
 	registry.Register(actions.NewCronWriteAction())
 	registry.Register(actions.NewCronListAction())

@@ -140,6 +140,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/accounts/{account}/databases/{databaseUser}/sso', [DatabaseSsoController::class, 'launch'])
         ->middleware('can:view,account')->name('accounts.databases.sso');
 
+    Route::get('/accounts/{account}/pma-sso', [DatabaseSsoController::class, 'launchPma'])
+        ->middleware('can:view,account')->name('accounts.databases.pma_sso');
+
     Route::get('/pma-sso/{token}', [DatabaseSsoController::class, 'consume'])
         ->name('pma.sso');
 
@@ -229,3 +232,10 @@ Route::get('/ui-kit', function () {
 
     return view('ui-kit');
 })->name('ui-kit');
+
+// phpMyAdmin SSO Internal Redeem & Logout
+Route::post('/internal/pma/redeem', [DatabaseSsoController::class, 'redeem'])
+    ->name('internal.pma.redeem');
+
+Route::get('/pma/logout', [DatabaseSsoController::class, 'logout'])
+    ->name('pma.logout');

@@ -21,6 +21,10 @@ return Application::configure(basePath: dirname(__DIR__))
             SecurityHeadersMiddleware::class,
         ]);
 
+        $middleware->validateCsrfTokens(except: [
+            'internal/pma/redeem',
+        ]);
+
         $middleware->alias([
             'api.auth' => AuthenticateApiToken::class,
             'api.idempotency' => HandleIdempotencyKey::class,

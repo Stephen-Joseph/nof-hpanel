@@ -5,6 +5,9 @@
         subtitle="Manage MySQL/MariaDB databases, user credentials, granular access privileges, and phpMyAdmin SSO."
     >
         <x-slot:actions>
+            <x-ui.button variant="secondary" wire:click="openPhpMyAdmin()" title="Launch phpMyAdmin single sign-on">
+                ↗ Open phpMyAdmin
+            </x-ui.button>
             <x-ui.button variant="outline" wire:click="refreshUsage" loading="refreshUsage">
                 ↻ Sync Storage Usage
             </x-ui.button>
@@ -174,6 +177,12 @@
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-right text-xs">
                         <div class="flex items-center justify-end gap-1.5">
+                            <x-ui.button variant="secondary" size="xs" wire:click="openPhpMyAdmin({{ $db->id }})" title="Open {{ $db->name }} in phpMyAdmin">
+                                phpMyAdmin
+                            </x-ui.button>
+                            <x-ui.button variant="outline" size="xs" wire:click="openImportModal({{ $db->id }})">
+                                Import SQL
+                            </x-ui.button>
                             <x-ui.button variant="outline" size="xs" wire:click="openGrantModal({{ $db->id }}, null)">
                                 + Add User
                             </x-ui.button>
@@ -404,6 +413,74 @@
                             Confirm Drop User
                         </x-ui.button>
                     </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    <!-- Import SQL Modal -->
+    @if ($showingImportModal)
+        <div class="fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true">
+            <div class="flex items-center justify-center min-h-screen px-4 py-6">
+                <div class="fixed inset-0 bg-slate-950/70 backdrop-blur-xs transition-opacity" wire:click="closeImportModal"></div>
+
+                <div class="relative bg-[var(--bg-card)] border border-[var(--border)] rounded-[24px] overflow-hidden shadow-2xl transform transition-all sm:max-w-lg w-full z-10">
+                    <form wire:submit.prevent="importDatabase">
+                        <div class="px-6 py-4.5 border-b border-[var(--border)] flex justify-between items-center">
+                            <div>
+                                <h3 class="text-base font-bold text-[var(--text)] tracking-tight">Import SQL Dump</h3>
+                                <p class="text-xs text-[var(--text-muted)] mt-0.5">Stream dump into database using restricted credentials.</p>
+                            </div>
+                            <x-ui.icon-button label="Close" variant="ghost" size="sm" wire:click="closeImportModal">
+                                &times;
+                            </x-ui.icon-button>
+                        </div>
+
+                        <div class="p-6 space-y-4">
+                            <div>
+                                <label class="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">Source Type</label>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <label class="flex items-center gap-2 p-3 rounded-xl border {{ $importSource === 'upload' ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20' : 'border-[var(--border)] bg-[var(--bg-shell)]' }} cursor-pointer">
+                                        <input type="radio" wire:model.live="importSource" value="upload" class="text-blue-600">
+                                        <span class="text-xs font-medium text-[var(--text)]">Upload .sql / .sql.gz</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 p-3 rounded-xl border {{ $importSource === 'home' ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20' : 'border-[var(--border)] bg-[var(--bg-shell)]' }} cursor-pointer">
+                                        <input type="radio" wire:model.live="importSource" value="home" class="text-blue-600">
+                                        <span class="text-xs font-medium text-[var(--text)]">Path inside Home</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            @if ($importSource === 'upload')
+                                <div>
+                                    <label class="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-1">Select File</label>
+                                    <input type="file" wire:model="importUploadedFile" accept=".sql,.gz"
+                                        class="block w-full text-xs text-[var(--text)] file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer" />
+                                    <p class="text-[11px] text-[var(--text-muted)] mt-1">Accepted formats: .sql, .sql.gz (Max {{ config('hpanel.file_manager.max_upload_size_mb', 100) }} MB)</p>
+                                    <div wire:loading wire:target="importUploadedFile" class="text-xs text-blue-600 mt-1">
+                                        Uploading file to panel...
+                                    </div>
+                                    @error('importUploadedFile') <span class="text-rose-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+                                </div>
+                            @else
+                                <div>
+                                    <label class="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-1">File Path inside /home/{{ $account->linux_username }}/</label>
+                                    <x-ui.input name="importHomeFilePath" type="text" wire:model="importHomeFilePath" placeholder="backups/database_dump.sql" />
+                                    <p class="text-[11px] text-[var(--text-muted)] mt-1">Provide relative path to home directory (e.g. <code>backups/mydb.sql.gz</code>).</p>
+                                    @error('importHomeFilePath') <span class="text-rose-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+                                </div>
+                            @endif
+                        </div>
+
+                        <div class="px-6 py-4 bg-[var(--bg-shell)]/60 border-t border-[var(--border)] flex justify-end gap-3">
+                            <x-ui.button variant="outline" size="sm" wire:click="closeImportModal">
+                                Cancel
+                            </x-ui.button>
+                            <x-ui.button type="submit" variant="primary" size="sm" loading="importDatabase">
+                                Start SQL Import
+                            </x-ui.button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
