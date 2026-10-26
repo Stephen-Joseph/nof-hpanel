@@ -132,4 +132,3 @@ func copyAndReplace(src, dest string, perm os.FileMode) error {
 
 	return os.Chmod(dest, perm)
 }
-

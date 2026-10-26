@@ -256,4 +256,3 @@ func (a *FileUploadAction) Execute(ctx context.Context, payload []byte, dryRun b
 		Logs: logs,
 	}, nil
 }
-

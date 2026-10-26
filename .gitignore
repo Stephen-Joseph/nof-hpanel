@@ -29,5 +29,6 @@ Thumbs.db
 # Go / Agent artifacts
 /agent/bin/
 /agent/dist/
+/agent/agent
 agent.exe
 *.exe
