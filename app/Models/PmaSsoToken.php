@@ -82,3 +82,4 @@ class PmaSsoToken extends Model
         $this->update(['used_at' => now()]);
     }
 }
+

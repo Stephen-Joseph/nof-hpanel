@@ -72,3 +72,4 @@ class PmaSsoSession extends Model
         return $this->revoked_at !== null || $this->expires_at->isPast();
     }
 }
+

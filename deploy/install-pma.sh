@@ -257,3 +257,4 @@ fi
 echo -e "\n${GREEN}======================================================================${NC}"
 echo -e "${GREEN}  phpMyAdmin SSO installed successfully on ${PMA_DOMAIN}${NC}"
 echo -e "${GREEN}======================================================================${NC}"
+

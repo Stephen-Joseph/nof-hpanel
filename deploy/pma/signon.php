@@ -82,3 +82,4 @@ if (! empty($data['database'])) {
 
 header('Location: ' . $targetUrl);
 exit;
+

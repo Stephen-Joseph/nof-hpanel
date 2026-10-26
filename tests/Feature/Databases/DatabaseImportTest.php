@@ -145,3 +145,4 @@ test('cross-tenant SQL import is denied', function () {
         ->call('openImportModal', $this->db2->id)
         ->assertForbidden();
 });
+

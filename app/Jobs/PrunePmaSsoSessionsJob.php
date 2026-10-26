@@ -43,3 +43,4 @@ class PrunePmaSsoSessionsJob implements ShouldQueue
         }
     }
 }
+
