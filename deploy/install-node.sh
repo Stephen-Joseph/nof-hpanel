@@ -357,12 +357,14 @@ Restart=always
 RestartSec=5s
 LimitNOFILE=65535
 
-# Process Sandboxing & Hardening
-ProtectSystem=full
+# Intent: The agent manages system accounts, configurations, and service reload.
+# It requires these capabilities for useradd/usermod, chown, setquota, and writing /etc/php and /etc/nginx.
+NoNewPrivileges=no
+ProtectSystem=no
 ProtectHome=no
-PrivateTmp=true
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SYS_RESOURCE
-NoNewPrivileges=false
+PrivateTmp=no
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER CAP_FSETID CAP_KILL CAP_SETGID CAP_SETUID CAP_SYS_ADMIN CAP_SYS_RESOURCE CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER CAP_FSETID CAP_KILL CAP_SETGID CAP_SETUID CAP_SYS_ADMIN CAP_SYS_RESOURCE CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target
@@ -373,7 +375,7 @@ execute rm -f /tmp/hpanel-agent.service
 execute systemctl daemon-reload
 execute systemctl enable --now hpanel-agent.service
 
-# Verify service is active and listening
+# Verify service is active, capabilities are adequate, and listening
 if [ "$DRY_RUN" = false ]; then
     sleep 2
     if ! systemctl is-active --quiet hpanel-agent; then
@@ -381,6 +383,22 @@ if [ "$DRY_RUN" = false ]; then
         journalctl -u hpanel-agent -n 30 --no-pager >&2 || true
         exit 1
     fi
+
+    MAIN_PID="$(systemctl show -p MainPID --value hpanel-agent 2>/dev/null || true)"
+    if [[ -z "$MAIN_PID" || "$MAIN_PID" -le 0 || ! -f "/proc/${MAIN_PID}/status" ]]; then
+        echo -e "${RED}Error: Cannot inspect /proc/<MainPID>/status for hpanel-agent (PID: ${MAIN_PID:-unknown}).${NC}" >&2
+        journalctl -u hpanel-agent -n 30 --no-pager >&2 || true
+        exit 1
+    fi
+
+    CAP_EFF="$(grep -i '^CapEff:' "/proc/${MAIN_PID}/status" | awk '{print $2}')"
+    if [[ -z "$CAP_EFF" ]] || ! (( 0x${CAP_EFF} != 0 && (0x${CAP_EFF} & 0x2) != 0 && (0x${CAP_EFF} & 0x200000) != 0 )); then
+        echo -e "${RED}Error: hpanel-agent has insufficient effective capabilities (CapEff: ${CAP_EFF:-none}).${NC}" >&2
+        echo -e "${RED}Agent requires non-zero CapEff including CAP_DAC_OVERRIDE (0x2) and CAP_SYS_ADMIN (0x200000) for useradd, quota, and config provisioning.${NC}" >&2
+        journalctl -u hpanel-agent -n 30 --no-pager >&2 || true
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Verified hpanel-agent capabilities (CapEff: ${CAP_EFF}, CAP_DAC_OVERRIDE & CAP_SYS_ADMIN present).${NC}"
 
     LISTEN_PORT="${AGENT_LISTEN##*:}"
     if ! (ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null) | grep -q ":${LISTEN_PORT} "; then
