@@ -570,6 +570,7 @@ step_end ok
 # =============================================================================
 step_begin
 # 8. Caches, permissions & frontend assets
+run mkdir -p "$APP_DIR/storage/app/livewire-tmp" "$APP_DIR/storage/app/private/uploads"
 artisan storage:link || true
 artisan optimize:clear
 artisan config:cache
@@ -579,11 +580,20 @@ run chown -R www-data:www-data "$APP_DIR/storage" "$APP_DIR/bootstrap/cache"
 run chmod -R ug+rwX "$APP_DIR/storage" "$APP_DIR/bootstrap/cache"
 
 if [[ $DRY_RUN == false && -f $APP_DIR/package.json && ! -f $APP_DIR/public/build/manifest.json ]]; then
-  if command -v npm >/dev/null 2>&1; then
-    (cd "$APP_DIR" && npm ci && npm run build) >>"$LOG_FILE" 2>&1 \
-      || warn "Frontend build failed. See the log."
-  else
-    warn "public/build is missing and npm is not installed. Build locally and commit public/build, or install Node.js 20+ and re-run."
+  if ! command -v npm >/dev/null 2>&1; then
+    log "Installing Node.js 22 (NodeSource)..."
+    run curl -fsSL https://deb.nodesource.com/setup_22.x -o /tmp/nodesource_setup.sh
+    run bash /tmp/nodesource_setup.sh
+    apt_install nodejs
+    rm -f /tmp/nodesource_setup.sh
+  fi
+
+  log "Building frontend assets..."
+  (cd "$APP_DIR" && npm ci && npm run build) >>"$LOG_FILE" 2>&1 \
+    || fail "Frontend build (npm ci && npm run build) failed. See $LOG_FILE"
+
+  if [[ ! -f "$APP_DIR/public/build/manifest.json" ]]; then
+    fail "Frontend build failed: public/build/manifest.json is still missing after npm run build."
   fi
 fi
 step_end ok
@@ -600,7 +610,7 @@ server {
     server_name __DOMAIN__;
     root __ROOT__;
     index index.php;
-    client_max_body_size 64M;
+    client_max_body_size 128M;
 
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "SAMEORIGIN" always;
@@ -623,6 +633,14 @@ run ln -sfn "$NGINX_SITE" /etc/nginx/sites-enabled/hpanel
 run rm -f /etc/nginx/sites-enabled/default
 run nginx -t
 run systemctl reload nginx
+
+PHP_INI_FILE="/etc/php/${PHP_VERSION}/fpm/php.ini"
+if [[ -f "$PHP_INI_FILE" ]]; then
+  run sed -i 's/^upload_max_filesize = .*/upload_max_filesize = 128M/' "$PHP_INI_FILE"
+  run sed -i 's/^post_max_size = .*/post_max_size = 128M/' "$PHP_INI_FILE"
+  run sed -i 's/^memory_limit = .*/memory_limit = 256M/' "$PHP_INI_FILE"
+  run systemctl reload "php${PHP_VERSION}-fpm" || true
+fi
 step_end ok
 
 # =============================================================================
@@ -723,8 +741,16 @@ if [[ "$INSTALL_NODE" == "yes" ]]; then
       AGENT_HMAC_SECRET=$(grep -o '"hmac_secret": *"[^"]*"' /etc/panel-agent/config.yaml 2>/dev/null | cut -d'"' -f4 || true)
       if [[ -n "$AGENT_HMAC_SECRET" ]]; then
         set_env PANEL_AGENT_HMAC_SECRET "$AGENT_HMAC_SECRET"
-        artisan config:clear || true
       fi
+    fi
+
+    set_env PANEL_AGENT_TLS_CA_FILE "/etc/panel-agent/certs/ca.crt"
+    set_env PANEL_AGENT_CLIENT_CERT_FILE "/etc/panel-agent/certs/panel-client.crt"
+    set_env PANEL_AGENT_CLIENT_KEY_FILE "/etc/panel-agent/certs/panel-client.key"
+    artisan config:cache || true
+    run systemctl restart "php${PHP_VERSION}-fpm" || true
+    if systemctl is-active --quiet hpanel-queue; then
+      run systemctl restart hpanel-queue || true
     fi
 
     DETECTED_PRIVATE_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7}' | tr -d '[:space:]' || hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")

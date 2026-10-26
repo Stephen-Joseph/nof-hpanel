@@ -38,11 +38,17 @@ echo "          HPANEL SERVER NODE AUTOMATED INSTALLER              "
 echo "=============================================================="
 echo -e "${NC}"
 
+ENABLE_QUOTA="${ENABLE_QUOTA:-false}"
+
 # Parse CLI flags
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --dry-run)
             DRY_RUN=true
+            shift
+            ;;
+        --enable-quota)
+            ENABLE_QUOTA=true
             shift
             ;;
         --panel-url)
@@ -208,7 +214,22 @@ echo -e "${GREEN}✓ Core server packages installed successfully.${NC}"
 
 # 4. Enabling Filesystem Quotas
 echo -e "${BLUE}[4/8] Initializing disk quota subsystem...${NC}"
-execute systemctl enable --now quota.service || true
+if [ "$ENABLE_QUOTA" = true ]; then
+    echo -e "${YELLOW}Enabling usrquota and grpquota on root filesystem...${NC}"
+    if [ "$DRY_RUN" = false ]; then
+        if grep -q ' / ' /etc/fstab && ! grep ' / ' /etc/fstab | grep -q 'usrquota'; then
+            sed -i '/ \/ / s/defaults/defaults,usrquota,grpquota/' /etc/fstab || true
+            mount -o remount / || true
+        fi
+        quotacheck -avugm || true
+        quotaon -avug || true
+    fi
+    execute systemctl enable --now quota.service || true
+    echo -e "${GREEN}✓ Disk quota subsystem configured and enabled.${NC}"
+else
+    echo -e "${YELLOW}Notice: Filesystem quotas not enabled (--enable-quota not specified). Storage limits are not enforced at filesystem level.${NC}"
+    execute systemctl enable --now quota.service || true
+fi
 
 # 5. Configuring UFW Firewall
 # Non-negotiable security: port 8443 opened ONLY to PANEL_IP, never to 0.0.0.0/0
@@ -236,30 +257,71 @@ fi
 # 6. Directory Structure Setup
 echo -e "${BLUE}[6/8] Establishing Agent file structure...${NC}"
 execute mkdir -p "$CONFIG_DIR" "$CERTS_DIR" "$LOGS_DIR" "$DATA_DIR" "/home"
-execute chmod 750 "$CONFIG_DIR" "$CERTS_DIR" "$LOGS_DIR" "$DATA_DIR"
+execute chmod 750 "$CONFIG_DIR" "$LOGS_DIR" "$DATA_DIR"
+execute chmod 755 "$CERTS_DIR"
 
-# Ensure certificates exist (generate CA and server certificates if missing)
-if [ ! -f "${CERTS_DIR}/panel-ca.crt" ]; then
+# Ensure certificates exist (generate ONE internal CA, server cert, and panel client cert)
+if [ ! -f "${CERTS_DIR}/ca.crt" ] || [ ! -f "${CERTS_DIR}/ca.key" ]; then
     if [ "$DRY_RUN" = false ]; then
         openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
-            -keyout "${CERTS_DIR}/panel-ca.key" \
-            -out "${CERTS_DIR}/panel-ca.crt" \
+            -keyout "${CERTS_DIR}/ca.key" \
+            -out "${CERTS_DIR}/ca.crt" \
             -subj "/CN=HPanel-Internal-CA"
-        chmod 600 "${CERTS_DIR}/panel-ca.key"
-        chmod 644 "${CERTS_DIR}/panel-ca.crt"
+        chmod 600 "${CERTS_DIR}/ca.key"
+        chmod 644 "${CERTS_DIR}/ca.crt"
     fi
 fi
 
-if [ ! -f "${CERTS_DIR}/server.crt" ]; then
+if [ ! -f "${CERTS_DIR}/server.crt" ] || [ ! -f "${CERTS_DIR}/server.key" ]; then
     if [ "$DRY_RUN" = false ]; then
-        openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
+        openssl req -newkey rsa:2048 -nodes \
             -keyout "${CERTS_DIR}/server.key" \
-            -out "${CERTS_DIR}/server.crt" \
-            -subj "/CN=${NODE_NAME}" \
-            -addext "subjectAltName=IP:${PRIVATE_IP},IP:127.0.0.1,DNS:${NODE_NAME}"
+            -out "${CERTS_DIR}/server.csr" \
+            -subj "/CN=${NODE_NAME}"
+
+        SAN="IP:127.0.0.1"
+        if [ -n "${PRIVATE_IP:-}" ] && [ "${PRIVATE_IP}" != "127.0.0.1" ]; then
+            SAN="${SAN},IP:${PRIVATE_IP}"
+        fi
+        SAN="${SAN},DNS:localhost,DNS:${NODE_NAME}"
+
+        openssl x509 -req -in "${CERTS_DIR}/server.csr" \
+            -CA "${CERTS_DIR}/ca.crt" -CAkey "${CERTS_DIR}/ca.key" -CAcreateserial \
+            -out "${CERTS_DIR}/server.crt" -days 3650 -sha256 \
+            -extfile <(printf "subjectAltName=%s\nextendedKeyUsage=serverAuth\n" "$SAN")
+
+        rm -f "${CERTS_DIR}/server.csr"
         chmod 600 "${CERTS_DIR}/server.key"
         chmod 644 "${CERTS_DIR}/server.crt"
     fi
+fi
+
+if [ ! -f "${CERTS_DIR}/panel-client.crt" ] || [ ! -f "${CERTS_DIR}/panel-client.key" ]; then
+    if [ "$DRY_RUN" = false ]; then
+        openssl req -newkey rsa:2048 -nodes \
+            -keyout "${CERTS_DIR}/panel-client.key" \
+            -out "${CERTS_DIR}/panel-client.csr" \
+            -subj "/CN=hpanel-panel-client"
+
+        openssl x509 -req -in "${CERTS_DIR}/panel-client.csr" \
+            -CA "${CERTS_DIR}/ca.crt" -CAkey "${CERTS_DIR}/ca.key" -CAcreateserial \
+            -out "${CERTS_DIR}/panel-client.crt" -days 3650 -sha256 \
+            -extfile <(printf "extendedKeyUsage=clientAuth\n")
+
+        rm -f "${CERTS_DIR}/panel-client.csr"
+        chmod 644 "${CERTS_DIR}/panel-client.crt"
+        chmod 640 "${CERTS_DIR}/panel-client.key"
+        if getent group www-data >/dev/null 2>&1; then
+            chown root:www-data "${CERTS_DIR}/panel-client.key"
+        fi
+    fi
+fi
+
+if [ "$DRY_RUN" = false ]; then
+    openssl verify -CAfile "${CERTS_DIR}/ca.crt" "${CERTS_DIR}/server.crt" "${CERTS_DIR}/panel-client.crt" >/dev/null 2>&1 || {
+        echo -e "${RED}Error: Certificate verification failed (openssl verify -CAfile ca.crt server.crt panel-client.crt)${NC}" >&2
+        exit 1
+    }
 fi
 
 # Write /etc/panel-agent/config.yaml (JSON format as loader requires) ONLY if it does not exist
@@ -273,7 +335,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     "listen_address": "${AGENT_LISTEN}",
     "tls_cert_file": "${CERTS_DIR}/server.crt",
     "tls_key_file": "${CERTS_DIR}/server.key",
-    "client_ca_file": "${CERTS_DIR}/panel-ca.crt"
+    "client_ca_file": "${CERTS_DIR}/ca.crt"
   },
   "auth": {
     "hmac_secret": "${HMAC_SECRET}",
@@ -410,6 +472,22 @@ if [ "$DRY_RUN" = false ]; then
         exit 1
     fi
     echo -e "${GREEN}✓ hpanel-agent is active and listening on ${AGENT_LISTEN}.${NC}"
+
+    if [ "$DRY_RUN" = false ]; then
+        PANEL_DIR="/var/www/hpanel"
+        if [ ! -f "${PANEL_DIR}/artisan" ] && [ -f "${SCRIPT_DIR}/artisan" ]; then
+            PANEL_DIR="${SCRIPT_DIR}"
+        fi
+        if [ -f "${PANEL_DIR}/artisan" ]; then
+            echo -e "${BLUE}Running agent health and configuration check (artisan hpanel:agent-check)...${NC}"
+            if ! (cd "${PANEL_DIR}" && php artisan hpanel:agent-check); then
+                echo -e "${RED}Error: hpanel:agent-check verification failed.${NC}" >&2
+                journalctl -u hpanel-agent -n 30 --no-pager >&2 || true
+                exit 1
+            fi
+            echo -e "${GREEN}✓ hpanel:agent-check passed successfully.${NC}"
+        fi
+    fi
 fi
 
 # 8. Node Enrollment Call

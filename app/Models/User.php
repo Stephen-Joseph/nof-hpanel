@@ -41,6 +41,7 @@ use Illuminate\Support\Carbon;
     'email',
     'password',
     'role',
+    'email_verified_at',
     'parent_id',
     'status',
     'two_factor_secret',
