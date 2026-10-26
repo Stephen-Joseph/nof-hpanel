@@ -38,6 +38,7 @@ class TerminateAccount implements ShouldQueue
         $previousStatus = $this->account->status;
         if ($this->account->status === AccountStatus::PENDING) {
             $this->account->transitionTo(AccountStatus::FAILED, 'Terminated while pending');
+            return;
         }
         $this->account->transitionTo(AccountStatus::TERMINATING);
 
@@ -55,7 +56,6 @@ class TerminateAccount implements ShouldQueue
             'status' => AgentJobStatus::RUNNING,
             'payload' => $payload,
             'dry_run' => $this->dryRun,
-            'attempts' => 1,
             'started_at' => now(),
         ]);
 
@@ -81,18 +81,27 @@ class TerminateAccount implements ShouldQueue
                 $agentJob->markCompleted($response['data']);
                 $this->account->transitionTo(AccountStatus::TERMINATED);
 
-                $audit->log(
-                    action: 'account.terminated',
-                    target: $this->account,
-                    oldValues: ['status' => $previousStatus->value],
-                    newValues: [
-                        'status' => AccountStatus::TERMINATED->value,
-                        'backup_path' => $response['data']['backup_path'] ?? null,
-                    ],
-                    actor: $this->account->user
-                );
+                try {
+                    $audit->log(
+                        action: 'account.terminated',
+                        target: $this->account,
+                        oldValues: ['status' => $previousStatus->value],
+                        newValues: [
+                            'status' => AccountStatus::TERMINATED->value,
+                            'backup_path' => $response['data']['backup_path'] ?? null,
+                        ],
+                        actor: $this->account->user
+                    );
+                } catch (\Throwable $e) {
+                    logger()->error('Audit log write failed: ' . $e->getMessage());
+                }
             } else {
                 $err = $response['error'] ?? 'Agent indicated termination failure';
+                if (is_array($err)) {
+                    $parts = array_filter([$err['message'] ?? null, $err['details'] ?? null]);
+                    $err = !empty($parts) ? implode(' | ', $parts) : json_encode($err);
+                }
+                $err = (string) $err;
                 $agentJob->markFailed($err);
                 $this->account->transitionTo(AccountStatus::FAILED, $err);
             }

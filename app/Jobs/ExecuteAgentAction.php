@@ -51,7 +51,7 @@ class ExecuteAgentAction implements ShouldQueue
                 server: $server,
                 action: $this->agentJob->action,
                 payload: $this->agentJob->payload ?? [],
-                dryRun: $this->agentJob->dry_run,
+                dryRun: (bool) $this->agentJob->dry_run,
                 requestId: $this->agentJob->id
             );
 
@@ -64,20 +64,30 @@ class ExecuteAgentAction implements ShouldQueue
                 $this->agentJob->markCompleted($response['data']);
                 $this->agentJob->recordLog("Action '{$this->agentJob->action}' completed successfully", 'info');
 
-                $audit->log(
-                    action: 'agent.action_completed',
-                    target: $this->agentJob,
-                    oldValues: ['status' => 'running'],
-                    newValues: [
-                        'status' => 'completed',
-                        'action' => $this->agentJob->action,
-                        'server_id' => $server->id,
-                        'duration_attempts' => $this->agentJob->attempts,
-                    ],
-                    actor: $this->agentJob->dispatcher
-                );
+                try {
+                    $audit->log(
+                        action: 'agent.action_completed',
+                        target: $this->agentJob,
+                        oldValues: ['status' => 'running'],
+                        newValues: [
+                            'status' => 'completed',
+                            'action' => $this->agentJob->action,
+                            'server_id' => $server->id,
+                            'duration_attempts' => $this->agentJob->attempts,
+                        ],
+                        actor: $this->agentJob->dispatcher
+                    );
+                } catch (\Throwable $e) {
+                    logger()->error('Audit log write failed: ' . $e->getMessage());
+                }
             } else {
-                $errorMessage = $response['error'] ?? 'Agent indicated action failure';
+                $err = $response['error'] ?? 'Agent indicated action failure';
+                if (is_array($err)) {
+                    $parts = array_filter([$err['message'] ?? null, $err['details'] ?? null]);
+                    $errorMessage = !empty($parts) ? implode(' | ', $parts) : json_encode($err);
+                } else {
+                    $errorMessage = (string) $err;
+                }
                 $this->agentJob->markFailed($errorMessage);
                 $this->agentJob->recordLog("Action returned failure: {$errorMessage}", 'error');
             }

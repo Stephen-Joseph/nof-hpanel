@@ -95,7 +95,7 @@ test('ProvisionAccount marks account failed when agent reports error', function 
     $this->account->refresh();
 
     expect($this->account->status)->toBe(AccountStatus::FAILED)
-        ->and($this->account->suspended_reason)->toBe('Disk quota exceeded on node storage pool');
+        ->and($this->account->failure_reason)->toBe('Disk quota exceeded on node storage pool');
 });
 
 test('SuspendAccount and UnsuspendAccount execute signed agent actions', function () {
@@ -182,7 +182,7 @@ test('TerminateAccount sends confirmation token and purges account', function ()
 
     $this->account->refresh();
     expect($this->account->status)->toBe(AccountStatus::TERMINATED);
-
+    
     $this->assertDatabaseHas('audit_logs', [
         'action' => 'account.terminated',
         'target_id' => $this->account->id,
@@ -208,7 +208,7 @@ test('ProvisionAccount job handles 422 agent response and transitions to failed 
     $this->account->refresh();
 
     expect($this->account->status)->toBe(AccountStatus::FAILED)
-        ->and($this->account->suspended_reason)->toContain('validation failed: storage_mb must be greater than 0');
+        ->and($this->account->failure_reason)->toContain('validation failed: storage_mb must be greater than 0');
 
     $this->assertDatabaseHas('agent_jobs', [
         'account_id' => $this->account->id,
@@ -236,7 +236,7 @@ test('ProvisionAccount job handles 500 agent step failure and transitions to fai
     $this->account->refresh();
 
     expect($this->account->status)->toBe(AccountStatus::FAILED)
-        ->and($this->account->suspended_reason)->toContain("step 'create_user' failed");
+        ->and($this->account->failure_reason)->toContain("step 'create_user' failed");
 
     $this->assertDatabaseHas('agent_jobs', [
         'account_id' => $this->account->id,
@@ -287,5 +287,6 @@ test('terminating a pending account transitions safely without DomainException',
     $termJob->handle($this->client, $this->audit);
 
     $this->account->refresh();
-    expect($this->account->status)->toBe(AccountStatus::TERMINATED);
+    expect($this->account->status)->toBe(AccountStatus::FAILED)
+        ->and($this->account->failure_reason)->toBe('Terminated while pending');
 });

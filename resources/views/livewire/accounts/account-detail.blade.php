@@ -1,7 +1,7 @@
 <div @if($isProvisioning) wire:poll.2s @endif>
     <x-layout.page-header 
         title="{{ $account->primary_domain }}" 
-        subtitle="Linux User: {{ $account->linux_username }} &middot; Home: /home/{{ $account->linux_username }}"
+        subtitle="Linux User: {{ $account->linux_username }} · Home: /home/{{ $account->linux_username }}"
     >
         <x-slot:actions>
             <div class="flex flex-wrap items-center gap-2">
@@ -111,9 +111,13 @@
         </div>
     @endif
 
-    @if ($account->suspended_reason)
+    @if ($account->status === App\Enums\AccountStatus::FAILED && ($account->failure_reason || ($latestJob && $latestJob->error_message)))
         <div class="mb-6 p-4 rounded-[20px] bg-rose-500/10 border border-rose-500/20 text-rose-500 dark:text-rose-400 text-sm">
-            <strong>Suspension Notice:</strong> {{ $account->suspended_reason }}
+            <strong>Provisioning error:</strong> {{ $account->failure_reason ?? $latestJob->error_message }}
+        </div>
+    @elseif ($account->status === App\Enums\AccountStatus::SUSPENDED && $account->suspended_reason)
+        <div class="mb-6 p-4 rounded-[20px] bg-rose-500/10 border border-rose-500/20 text-rose-500 dark:text-rose-400 text-sm">
+            <strong>Suspension notice:</strong> {{ $account->suspended_reason }}
         </div>
     @endif
 

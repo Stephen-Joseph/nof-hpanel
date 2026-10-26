@@ -40,7 +40,8 @@ test('failure and retry transitions succeed', function () {
     expect($account->canTransitionTo(AccountStatus::FAILED))->toBeTrue();
     $account->transitionTo(AccountStatus::FAILED, 'Timeout connecting to agent node');
     expect($account->status)->toBe(AccountStatus::FAILED)
-        ->and($account->suspended_reason)->toBe('Timeout connecting to agent node');
+        ->and($account->failure_reason)->toBe('Timeout connecting to agent node')
+        ->and($account->suspended_reason)->toBeNull();
 
     // Failed -> Pending (Retry)
     expect($account->canTransitionTo(AccountStatus::PENDING))->toBeTrue();

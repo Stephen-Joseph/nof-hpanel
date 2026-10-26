@@ -46,7 +46,6 @@ class UnsuspendAccount implements ShouldQueue
             'status' => AgentJobStatus::RUNNING,
             'payload' => $payload,
             'dry_run' => $this->dryRun,
-            'attempts' => 1,
             'started_at' => now(),
         ]);
 
@@ -72,18 +71,26 @@ class UnsuspendAccount implements ShouldQueue
                 $agentJob->markCompleted($response['data']);
                 $this->account->transitionTo(AccountStatus::ACTIVE);
 
-                $audit->log(
-                    action: 'account.unsuspended',
-                    target: $this->account,
-                    oldValues: ['status' => AccountStatus::SUSPENDED->value],
-                    newValues: [
-                        'status' => AccountStatus::ACTIVE->value,
-                    ],
-                    actor: $this->account->user
-                );
+                try {
+                    $audit->log(
+                        action: 'account.unsuspended',
+                        target: $this->account,
+                        oldValues: ['status' => AccountStatus::SUSPENDED->value],
+                        newValues: [
+                            'status' => AccountStatus::ACTIVE->value,
+                        ],
+                        actor: $this->account->user
+                    );
+                } catch (\Throwable $e) {
+                    logger()->error('Audit log write failed: ' . $e->getMessage());
+                }
             } else {
                 $err = $response['error'] ?? 'Agent indicated unsuspension failure';
-                $agentJob->markFailed($err);
+                if (is_array($err)) {
+                    $parts = array_filter([$err['message'] ?? null, $err['details'] ?? null]);
+                    $err = !empty($parts) ? implode(' | ', $parts) : json_encode($err);
+                }
+                $agentJob->markFailed((string) $err);
             }
         } catch (Throwable $e) {
             $agentJob->recordLog('Unsuspension error: '.$e->getMessage(), 'error');

@@ -63,7 +63,6 @@ class ProvisionAccount implements ShouldQueue
             'status' => AgentJobStatus::RUNNING,
             'payload' => $payload,
             'dry_run' => $this->dryRun,
-            'attempts' => 1,
             'started_at' => now(),
         ]);
 
@@ -113,19 +112,28 @@ class ProvisionAccount implements ShouldQueue
                 $agentJob->markCompleted($response['data']);
                 $this->account->transitionTo(AccountStatus::ACTIVE);
 
-                $audit->log(
-                    action: 'account.provisioned',
-                    target: $this->account,
-                    oldValues: ['status' => AccountStatus::PENDING->value],
-                    newValues: [
-                        'status' => AccountStatus::ACTIVE->value,
-                        'server_id' => $server->id,
-                        'job_id' => $agentJob->id,
-                    ],
-                    actor: $this->account->user
-                );
+                try {
+                    $audit->log(
+                        action: 'account.provisioned',
+                        target: $this->account,
+                        oldValues: ['status' => AccountStatus::PENDING->value],
+                        newValues: [
+                            'status' => AccountStatus::ACTIVE->value,
+                            'server_id' => $server->id,
+                            'job_id' => $agentJob->id,
+                        ],
+                        actor: $this->account->user
+                    );
+                } catch (\Throwable $e) {
+                    logger()->error('Audit log write failed: ' . $e->getMessage());
+                }
             } else {
                 $err = $response['error'] ?? 'Agent indicated provisioning failure';
+                if (is_array($err)) {
+                    $parts = array_filter([$err['message'] ?? null, $err['details'] ?? null]);
+                    $err = !empty($parts) ? implode(' | ', $parts) : json_encode($err);
+                }
+                $err = (string) $err;
                 $currentStep = $agentJob->provisioningSteps()->where('status', 'running')->first() 
                     ?? $agentJob->provisioningSteps()->where('status', 'pending')->first();
                 $currentStep?->markFailed($err);

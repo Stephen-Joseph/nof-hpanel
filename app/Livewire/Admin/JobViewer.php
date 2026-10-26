@@ -65,6 +65,7 @@ class JobViewer extends Component
             'error_message' => null,
             'started_at' => null,
             'completed_at' => null,
+            'attempts' => 0,
         ]);
 
         $job->recordLog('Job retry manually triggered by administrator', 'info');

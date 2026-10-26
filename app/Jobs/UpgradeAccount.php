@@ -58,7 +58,6 @@ class UpgradeAccount implements ShouldQueue
             'status' => AgentJobStatus::RUNNING,
             'payload' => $payload,
             'dry_run' => $this->dryRun,
-            'attempts' => 1,
             'started_at' => now(),
         ]);
 
@@ -84,16 +83,24 @@ class UpgradeAccount implements ShouldQueue
                 $agentJob->markCompleted($response['data']);
                 $this->account->update(['package_id' => $this->newPackage->id]);
 
-                $audit->log(
-                    action: 'account.upgraded',
-                    target: $this->account,
-                    oldValues: ['package_id' => $oldPackage->id, 'package_name' => $oldPackage->name],
-                    newValues: ['package_id' => $this->newPackage->id, 'package_name' => $this->newPackage->name],
-                    actor: $this->account->user
-                );
+                try {
+                    $audit->log(
+                        action: 'account.upgraded',
+                        target: $this->account,
+                        oldValues: ['package_id' => $oldPackage->id, 'package_name' => $oldPackage->name],
+                        newValues: ['package_id' => $this->newPackage->id, 'package_name' => $this->newPackage->name],
+                        actor: $this->account->user
+                    );
+                } catch (\Throwable $e) {
+                    logger()->error('Audit log write failed: ' . $e->getMessage());
+                }
             } else {
                 $err = $response['error'] ?? 'Agent indicated upgrade failure';
-                $agentJob->markFailed($err);
+                if (is_array($err)) {
+                    $parts = array_filter([$err['message'] ?? null, $err['details'] ?? null]);
+                    $err = !empty($parts) ? implode(' | ', $parts) : json_encode($err);
+                }
+                $agentJob->markFailed((string) $err);
             }
         } catch (Throwable $e) {
             $agentJob->recordLog('Upgrade error: '.$e->getMessage(), 'error');

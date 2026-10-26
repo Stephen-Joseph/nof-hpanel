@@ -24,6 +24,7 @@ use Illuminate\Support\Str;
  * @property string $primary_domain
  * @property AccountStatus $status
  * @property string|null $suspended_reason
+ * @property string|null $failure_reason
  * @property float $current_storage_mb
  * @property int $current_inodes
  * @property int $current_bandwidth_bytes
@@ -53,6 +54,7 @@ use Illuminate\Support\Str;
     'primary_domain',
     'status',
     'suspended_reason',
+    'failure_reason',
     'current_storage_mb',
     'current_inodes',
     'current_bandwidth_bytes',
@@ -386,10 +388,13 @@ class Account extends Model
         }
 
         $attributes = ['status' => $newStatus];
-        if ($reason !== null) {
-            $attributes['suspended_reason'] = Str::limit($reason, 500, '');
+        if ($newStatus === AccountStatus::FAILED) {
+            $attributes['failure_reason'] = $reason !== null ? Str::limit($reason, 1000, '') : null;
+        } elseif ($newStatus === AccountStatus::SUSPENDED) {
+            $attributes['suspended_reason'] = $reason !== null ? Str::limit($reason, 1000, '') : null;
         } elseif ($newStatus === AccountStatus::ACTIVE) {
             $attributes['suspended_reason'] = null;
+            $attributes['failure_reason'] = null;
         }
 
         $this->update($attributes);

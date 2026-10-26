@@ -123,6 +123,11 @@
                                 }" size="sm" :class="$job->status->value === 'running' ? 'animate-pulse' : ''">
                                     {{ $job->status->label() }}
                                 </x-ui.chip>
+                                @if ($job->error_message)
+                                    <div class="text-[11px] text-rose-500 truncate max-w-xs mt-1" title="{{ $job->error_message }}">
+                                        {{ $job->error_message }}
+                                    </div>
+                                @endif
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-xs text-muted font-mono">
                                 {{ $job->attempts }} / {{ $job->max_attempts }}

@@ -169,13 +169,22 @@ class AgentJob extends Model
         ]);
     }
 
+    public function setAttemptsAttribute(mixed $value): void
+    {
+        $max = $this->max_attempts ?: 3;
+        $this->attributes['attempts'] = min(max(0, (int) $value), $max);
+    }
+
     public function markRunning(): void
     {
+        $maxAttempts = $this->max_attempts ?: 3;
+        $newAttempts = min($this->attempts + 1, $maxAttempts);
         $this->update([
             'status' => AgentJobStatus::RUNNING,
             'started_at' => now(),
-            'attempts' => $this->attempts + 1,
+            'attempts' => $newAttempts,
         ]);
+        $this->attempts = $newAttempts;
     }
 
     /**
