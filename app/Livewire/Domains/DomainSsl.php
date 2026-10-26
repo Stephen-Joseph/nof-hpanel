@@ -69,13 +69,21 @@ class DomainSsl extends Component
 
     public function requestLetsEncrypt(): void
     {
-        $this->authorize('update', $this->domain);
+        $this->authorize('requestSsl', $this->domain);
+
+        if ($this->domain->verification_status !== 'verified') {
+            session()->flash('error', "Domain '{$this->domain->domain}' must be verified via DNS before requesting an SSL certificate.");
+
+            return;
+        }
 
         $this->validate([
             'email' => ['required', 'email'],
         ]);
 
         IssueSslCertificateJob::dispatch($this->domain, $this->email);
+
+        $this->domain->refresh();
 
         session()->flash('status', "Let's Encrypt certificate issuance enqueued for {$this->domain->domain}.");
     }

@@ -55,15 +55,33 @@
         @forelse ($domains as $d)
             <tr class="hover:bg-[var(--bg-shell)]/60 transition-colors">
                 <td class="px-6 py-4 whitespace-nowrap font-medium text-[var(--text)]">
-                    <div class="flex items-center gap-1.5">
+                    <div class="flex items-center gap-1.5 flex-wrap">
                         <a href="http://{{ $d->domain }}" target="_blank" rel="noopener" class="hover:text-blue-600 dark:hover:text-blue-400 font-semibold flex items-center gap-1">
                             {{ $d->domain }}
                             <svg class="w-3.5 h-3.5 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                             </svg>
                         </a>
-                        @if($d->force_https)
-                            <x-ui.chip variant="success" size="sm" dot>HTTPS</x-ui.chip>
+                        @if($d->verification_status === 'verified')
+                            <a href="{{ route('domains.dns', $d) }}" title="DNS Verified">
+                                <x-ui.chip variant="success" size="xs" dot>Verified</x-ui.chip>
+                            </a>
+                        @elseif($d->verification_status === 'failed')
+                            <a href="{{ route('domains.dns', $d) }}" title="DNS Failed">
+                                <x-ui.chip variant="danger" size="xs" dot>DNS Failed</x-ui.chip>
+                            </a>
+                        @else
+                            <a href="{{ route('domains.dns', $d) }}" title="DNS Pending Verification">
+                                <x-ui.chip variant="warning" size="xs" dot>Pending DNS</x-ui.chip>
+                            </a>
+                        @endif
+
+                        @if($d->ssl_status === 'active')
+                            <x-ui.chip variant="success" size="xs">SSL</x-ui.chip>
+                        @elseif($d->ssl_status === 'pending')
+                            <x-ui.chip variant="warning" size="xs">SSL...</x-ui.chip>
+                        @elseif($d->force_https)
+                            <x-ui.chip variant="success" size="xs" dot>HTTPS</x-ui.chip>
                         @endif
                     </div>
                 </td>

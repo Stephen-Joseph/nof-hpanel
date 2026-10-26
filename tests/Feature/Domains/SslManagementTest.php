@@ -34,7 +34,7 @@ beforeEach(function () {
         'linux_username' => 'alicecorp',
         'primary_domain' => 'alicecorp.com',
     ]);
-    $this->domain1 = Domain::factory()->create([
+    $this->domain1 = Domain::factory()->verified()->create([
         'account_id' => $this->account1->id,
         'domain' => 'alicecorp.com',
         'type' => DomainType::PRIMARY,

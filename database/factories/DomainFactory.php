@@ -49,4 +49,23 @@ class DomainFactory extends Factory
             'type' => DomainType::SUBDOMAIN,
         ]);
     }
+
+    public function verified(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'verification_status' => 'verified',
+            'verified_at' => now(),
+            'dns_consecutive_failures' => 0,
+            'dns_last_error' => null,
+        ]);
+    }
+
+    public function sslActive(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'ssl_status' => 'active',
+            'ssl_expires_at' => now()->addDays(90),
+            'ssl_last_error' => null,
+        ]);
+    }
 }

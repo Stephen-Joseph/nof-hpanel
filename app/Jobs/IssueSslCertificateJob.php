@@ -37,6 +37,23 @@ class IssueSslCertificateJob implements ShouldQueue
         $account = $this->domain->account;
         $server = $account->server;
 
+        // Ensure domain is verified before proceeding with SSL request
+        if ($this->domain->verification_status !== 'verified') {
+            $msg = 'Domain must be verified before requesting SSL.';
+            $this->domain->update([
+                'ssl_status' => 'failed',
+                'ssl_last_error' => $msg,
+            ]);
+
+            return;
+        }
+
+        $this->domain->update([
+            'ssl_status' => 'pending',
+            'ssl_requested_at' => now(),
+            'ssl_last_error' => null,
+        ]);
+
         /** @var Certificate $cert */
         $cert = Certificate::updateOrCreate(
             ['domain_id' => $this->domain->id],
@@ -87,14 +104,22 @@ class IssueSslCertificateJob implements ShouldQueue
 
             if ($response['success']) {
                 $data = $response['data'];
+                $validTo = isset($data['valid_to']) ? Carbon::parse($data['valid_to']) : now()->addDays(90);
+
                 $cert->update([
                     'status' => CertificateStatus::ACTIVE,
                     'cert_path' => $data['cert_path'] ?? null,
                     'key_path' => $data['key_path'] ?? null,
                     'issuer' => $data['issuer'] ?? "Let's Encrypt",
                     'valid_from' => isset($data['valid_from']) ? Carbon::parse($data['valid_from']) : now(),
-                    'valid_to' => isset($data['valid_to']) ? Carbon::parse($data['valid_to']) : now()->addDays(90),
+                    'valid_to' => $validTo,
                     'last_error' => null,
+                ]);
+
+                $this->domain->update([
+                    'ssl_status' => 'active',
+                    'ssl_expires_at' => $validTo,
+                    'ssl_last_error' => null,
                 ]);
 
                 $agentJob->markCompleted($data);
@@ -110,33 +135,45 @@ class IssueSslCertificateJob implements ShouldQueue
                 WriteVhostJob::dispatch($this->domain);
             } else {
                 $errorMsg = $response['error'] ?? 'Certificate issuance failed';
+                $shortError = substr($errorMsg, 0, 500);
+
                 $cert->update([
                     'status' => CertificateStatus::FAILED,
-                    'last_error' => $errorMsg,
+                    'last_error' => $shortError,
                 ]);
 
-                $agentJob->markFailed($errorMsg);
+                $this->domain->update([
+                    'ssl_status' => 'failed',
+                    'ssl_last_error' => $shortError,
+                ]);
+
+                $agentJob->markFailed($shortError);
 
                 $webhooks->dispatch('ssl.failed', [
                     'domain' => $this->domain->domain,
-                    'error' => $errorMsg,
+                    'error' => $shortError,
                 ], $account->user);
             }
         } catch (Throwable $e) {
+            $shortError = substr($e->getMessage(), 0, 500);
+
             $cert->update([
                 'status' => CertificateStatus::FAILED,
-                'last_error' => $e->getMessage(),
+                'last_error' => $shortError,
             ]);
 
-            $agentJob->recordLog('SSL issuance error: '.$e->getMessage(), 'error');
-            $agentJob->markFailed($e->getMessage());
+            $this->domain->update([
+                'ssl_status' => 'failed',
+                'ssl_last_error' => $shortError,
+            ]);
+
+            $agentJob->recordLog('SSL issuance error: '.$shortError, 'error');
+            $agentJob->markFailed($shortError);
 
             $webhooks->dispatch('ssl.failed', [
                 'domain' => $this->domain->domain,
-                'error' => $e->getMessage(),
+                'error' => $shortError,
             ], $account->user);
-
-            throw $e;
         }
     }
 }

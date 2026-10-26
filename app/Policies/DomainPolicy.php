@@ -41,4 +41,14 @@ class DomainPolicy
     {
         return $this->view($user, $domain);
     }
+
+    public function verify(User $user, Domain $domain): bool
+    {
+        return $this->view($user, $domain);
+    }
+
+    public function requestSsl(User $user, Domain $domain): bool
+    {
+        return $this->view($user, $domain);
+    }
 }
