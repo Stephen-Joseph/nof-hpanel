@@ -403,6 +403,7 @@ if [ -d "${SCRIPT_DIR}/agent" ]; then
     )
     execute chmod 755 "${BUILD_DIR}/panel-agent"
     execute cp -f "${BUILD_DIR}/panel-agent" /usr/local/bin/panel-agent
+    execute ln -sf /usr/local/bin/panel-agent /usr/local/bin/hpanel-agent
     execute /usr/local/bin/panel-agent -version
 fi
 

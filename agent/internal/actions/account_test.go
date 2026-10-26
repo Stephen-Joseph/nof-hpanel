@@ -3,6 +3,8 @@ package actions
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -203,5 +205,80 @@ func TestAccountTerminateValidationAndToken(t *testing.T) {
 	}
 	if res.Data["terminated"] != true {
 		t.Fatal("expected terminated=true")
+	}
+}
+
+func TestAccountTerminateCleansUpVhostsAndPools(t *testing.T) {
+	tempBase := t.TempDir()
+	availDir := filepath.Join(tempBase, "sites-available")
+	enabledDir := filepath.Join(tempBase, "sites-enabled")
+	phpBase := filepath.Join(tempBase, "php")
+	sshdDir := filepath.Join(tempBase, "sshd_config.d")
+
+	_ = os.MkdirAll(availDir, 0755)
+	_ = os.MkdirAll(enabledDir, 0755)
+	_ = os.MkdirAll(filepath.Join(phpBase, "8.3", "fpm", "pool.d"), 0755)
+	_ = os.MkdirAll(filepath.Join(phpBase, "8.4", "fpm", "pool.d"), 0755)
+	_ = os.MkdirAll(sshdDir, 0755)
+
+	// Create user vhost
+	userVhostAvail := filepath.Join(availDir, "smoketest1.test.conf")
+	_ = os.WriteFile(userVhostAvail, []byte("server { root /home/smoketest1/public_html; }"), 0644)
+	userVhostEnabled := filepath.Join(enabledDir, "smoketest1.test.conf")
+	_ = os.Symlink(userVhostAvail, userVhostEnabled)
+
+	// Create user PHP pool
+	userPool83 := filepath.Join(phpBase, "8.3", "fpm", "pool.d", "smoketest1.conf")
+	_ = os.WriteFile(userPool83, []byte("[smoketest1]"), 0640)
+	userPool84 := filepath.Join(phpBase, "8.4", "fpm", "pool.d", "smoketest1.conf")
+	_ = os.WriteFile(userPool84, []byte("[smoketest1]"), 0640)
+
+	// Create sshd match config
+	sshdConf := filepath.Join(sshdDir, "hpanel-smoketest1.conf")
+	_ = os.WriteFile(sshdConf, []byte("Match User smoketest1\nChrootDirectory /home/%u\n"), 0644)
+
+	// Create other user's files to verify isolation
+	otherVhostAvail := filepath.Join(availDir, "otheruser.test.conf")
+	_ = os.WriteFile(otherVhostAvail, []byte("server { root /home/otheruser/public_html; }"), 0644)
+	otherVhostEnabled := filepath.Join(enabledDir, "otheruser.test.conf")
+	_ = os.Symlink(otherVhostAvail, otherVhostEnabled)
+
+	fakeExec := &fakeCommandExecutor{}
+	action := NewAccountTerminateActionForTest(fakeExec, availDir, enabledDir, phpBase, sshdDir)
+
+	payload, _ := json.Marshal(AccountTerminatePayload{
+		Username:     "smoketest1",
+		ConfirmToken: "TERMINATE-smoketest1",
+		TakeBackup:   false,
+	})
+
+	res, err := action.Execute(context.Background(), payload, false)
+	if err != nil || !res.Success {
+		t.Fatalf("execute failed: %v", err)
+	}
+
+	// Verify smoketest1 files removed
+	if _, err := os.Stat(userVhostAvail); !os.IsNotExist(err) {
+		t.Errorf("expected user vhost in available to be removed")
+	}
+	if _, err := os.Lstat(userVhostEnabled); !os.IsNotExist(err) {
+		t.Errorf("expected user vhost link in enabled to be removed")
+	}
+	if _, err := os.Stat(userPool83); !os.IsNotExist(err) {
+		t.Errorf("expected user pool 8.3 to be removed")
+	}
+	if _, err := os.Stat(userPool84); !os.IsNotExist(err) {
+		t.Errorf("expected user pool 8.4 to be removed")
+	}
+	if _, err := os.Stat(sshdConf); !os.IsNotExist(err) {
+		t.Errorf("expected sshd config to be removed")
+	}
+
+	// Verify other user's files remain untouched
+	if _, err := os.Stat(otherVhostAvail); os.IsNotExist(err) {
+		t.Errorf("other user vhost in available should not be removed")
+	}
+	if _, err := os.Lstat(otherVhostEnabled); os.IsNotExist(err) {
+		t.Errorf("other user vhost in enabled should not be removed")
 	}
 }

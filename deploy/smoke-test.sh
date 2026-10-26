@@ -57,7 +57,7 @@ cleanup() {
   if [[ "$ACCOUNT_CREATED" -eq 1 ]]; then
     echo ""
     echo "Teardown: Cleaning up throwaway test account '${TEST_USER}'..."
-    local term_payload="{\"username\":\"${TEST_USER}\",\"confirm_token\":\"TERMINATE-${TEST_USER}\",\"take_backup\":false}"
+    local term_payload="{\"username\":\"${TEST_USER}\",\"confirm_token\":\"TERMINATE-${TEST_USER}\",\"take_backup\":false,\"domains\":[\"${TEST_DOMAIN}\"]}"
     $ARTISAN hpanel:agent-dispatch account.terminate --payload="$term_payload" >/dev/null 2>&1 || true
     ACCOUNT_CREATED=0
   fi
@@ -238,7 +238,7 @@ if [[ "$ACCOUNT_CREATED" -eq 1 ]]; then
   # ---------------------------------------------------------------------------
   echo ""
   echo "--> Tearing down test account '${TEST_USER}'..."
-  TERM_PAYLOAD="{\"username\":\"${TEST_USER}\",\"confirm_token\":\"TERMINATE-${TEST_USER}\",\"take_backup\":false}"
+  TERM_PAYLOAD="{\"username\":\"${TEST_USER}\",\"confirm_token\":\"TERMINATE-${TEST_USER}\",\"take_backup\":false,\"domains\":[\"${TEST_DOMAIN}\"]}"
   if $ARTISAN hpanel:agent-dispatch account.terminate --payload="$TERM_PAYLOAD" >/tmp/agent_term.log 2>&1; then
     ACCOUNT_CREATED=0
     # Verify cleanup

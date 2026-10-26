@@ -58,7 +58,7 @@ const accountCreateNginxVhostTemplate = `server {
     }
 
     location / {
-        try_files $uri $uri/ /index.php?$query_string;
+        try_files $uri $uri/ /index.html /index.php?$query_string;
     }
 
     location ~ \.php$ {
@@ -383,6 +383,7 @@ func (a *AccountCreateAction) ensureDirectories(ctx context.Context, username, h
 	if err := os.Chmod(homeDir, 0711); err != nil {
 		return fmt.Errorf("chmod home directory %s: %w", homeDir, err)
 	}
+	_ = a.executor.Run(ctx, "chmod", "0711", homeDir)
 	if err := a.executor.Run(ctx, "chown", fmt.Sprintf("%s:%s", username, username), homeDir); err != nil {
 		return fmt.Errorf("chown home directory %s: %w", homeDir, err)
 	}
@@ -412,6 +413,7 @@ func (a *AccountCreateAction) ensureDirectories(ctx context.Context, username, h
 		if err := os.Chmod(dirPath, sub.perm); err != nil {
 			return fmt.Errorf("chmod %s: %w", dirPath, err)
 		}
+		_ = a.executor.Run(ctx, "chmod", fmt.Sprintf("%04o", sub.perm), dirPath)
 		if err := a.executor.Run(ctx, "chown", fmt.Sprintf("%s:%s", username, username), dirPath); err != nil {
 			return fmt.Errorf("chown %s: %w", dirPath, err)
 		}
