@@ -35,13 +35,19 @@ All agent executions invoke external commands strictly with argument arrays (e.g
 
 ---
 
-## 4. Atomic Staging & Rollback Strategy
+## 4. Atomic Staging, Linking & Rollback Strategy
 
-To prevent corrupted Nginx configurations from taking down active websites:
-1. **Render to Staging**: The agent renders the virtual host template to a temporary staging path: `/tmp/panel-agent/<domain>.conf.tmp`.
-2. **Pre-flight Syntax Test**: The agent executes `nginx -t`. If validation fails, the staging file is immediately removed and the error output is captured and returned in the job logs. The running Nginx process is untouched.
-3. **Atomic Activation**: On validation success, the file is atomically moved to `/etc/nginx/sites-available/<domain>.conf` and symlinked to `/etc/nginx/sites-enabled/<domain>.conf`.
-4. **Graceful Reload**: `systemctl reload nginx` is triggered. If the reload fails, the agent immediately removes the newly created symlink and restores previous configurations, ensuring zero downtime for existing domains.
+To ensure zero downtime and prevent misconfigured virtual hosts from breaking running services:
+1. **Default Server Catch-All (`00-default.conf`)**:
+   The agent automatically installs and links a hardened default server block on ports 80 and 443 (`server_name _; return 444;` with `ssl_reject_handshake on;` on port 443). Any unmapped domain, direct IP probing, or SNI mismatch is immediately dropped without responding.
+2. **Canonical Server Names & Root Isolation**:
+   Every account vhost automatically configures `server_name` for both the primary domain and `www` (e.g. `example.com www.example.com`), while ensuring the document root strictly resides within the account's home directory (`/home/<username>/...`).
+3. **Atomic Placement & Symlinking**:
+   Configurations are rendered to a destination-local temporary file (`.domain.conf.tmp-*`), fsynced, permissions set to `0640`, and atomically moved to `/etc/nginx/sites-available/<domain>.conf`. The file is then linked into `/etc/nginx/sites-enabled/<domain>.conf`.
+4. **Post-Link Syntax Verification**:
+   The agent invokes `nginx -t` **only after** the file is linked into `sites-enabled/`. This guarantees that Nginx tests the complete, active configuration graph. If validation fails, the newly created symlink and available configuration are immediately unlinked and removed (or previous configuration restored from backup), and the test output is captured without reloading.
+5. **Graceful Reload**:
+   Only after `nginx -t` succeeds with the file linked in `sites-enabled/`, `systemctl reload nginx` is executed. If reload fails, changes are cleanly rolled back.
 
 ---
 

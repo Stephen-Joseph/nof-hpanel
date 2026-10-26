@@ -126,15 +126,45 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/action", s.handleAction)
 	mux.HandleFunc("/api/v1/action", s.handleAction)
-	mux.HandleFunc("/healthz", s.handleHealthz)
+	mux.HandleFunc("/health", s.handleHealth)
+	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/metrics", s.handleMetrics)
 	return mux
 }
 
-func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.writeJSONError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed", "")
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
+
+	// Collect health metrics from system.health action
+	res, err := s.registry.Execute(r.Context(), "system.health", nil, false)
+	var quotas any
+	var services any
+	if err == nil && res != nil && res.Success && res.Data != nil {
+		quotas = res.Data["quotas"]
+		services = res.Data["services"]
+	} else {
+		quotas = map[string]any{"enabled": false, "status": "unknown"}
+		services = map[string]string{"nginx": "unknown", "php-fpm": "unknown", "mariadb": "unknown"}
+	}
+
+	healthData := map[string]any{
+		"version":  "0.1.0",
+		"status":   "ok",
+		"quotas":   quotas,
+		"services": services,
+	}
+
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	_ = json.NewEncoder(w).Encode(healthData)
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	s.handleHealth(w, r)
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
@@ -278,17 +308,20 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 	s.metrics.Record(req.Action, metricStatus, durationMs)
 
-	status := http.StatusOK
 	if execErr != nil && !res.Success {
 		if errors.Is(execErr, actions.ErrValidation) {
-			status = http.StatusUnprocessableEntity
-		} else {
-			status = http.StatusInternalServerError
+			s.writeJSONError(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", execErr.Error(), "")
+			return
 		}
+		errMsg := res.Error
+		if errMsg == "" {
+			errMsg = execErr.Error()
+		}
+		s.writeJSONError(w, http.StatusInternalServerError, "STEP_FAILED", errMsg, "")
+		return
 	}
 
-	w.WriteHeader(status)
-
+	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
 }
 

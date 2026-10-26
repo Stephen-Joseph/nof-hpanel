@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"runtime"
 )
 
@@ -14,10 +14,29 @@ type VhostRemovePayload struct {
 	Domain   string `json:"domain"`
 }
 
-type VhostRemoveAction struct{}
+type VhostRemoveAction struct {
+	executor          commandExecutor
+	vhostAvailableDir string
+	vhostEnabledDir   string
+	isLinux           bool
+}
 
 func NewVhostRemoveAction() *VhostRemoveAction {
-	return &VhostRemoveAction{}
+	return &VhostRemoveAction{
+		executor:          osCommandExecutor{},
+		vhostAvailableDir: "/etc/nginx/sites-available",
+		vhostEnabledDir:   "/etc/nginx/sites-enabled",
+		isLinux:           runtime.GOOS == "linux",
+	}
+}
+
+func NewVhostRemoveActionForTest(executor commandExecutor, vhostAvailableDir, vhostEnabledDir string) *VhostRemoveAction {
+	return &VhostRemoveAction{
+		executor:          executor,
+		vhostAvailableDir: vhostAvailableDir,
+		vhostEnabledDir:   vhostEnabledDir,
+		isLinux:           true,
+	}
 }
 
 func (a *VhostRemoveAction) Name() string {
@@ -41,8 +60,8 @@ func (a *VhostRemoveAction) Execute(ctx context.Context, payload []byte, dryRun 
 		return &ActionResult{Success: false, Error: err.Error()}, err
 	}
 
-	availPath := fmt.Sprintf("/etc/nginx/sites-available/%s.conf", p.Domain)
-	enabledPath := fmt.Sprintf("/etc/nginx/sites-enabled/%s.conf", p.Domain)
+	availPath := filepath.Join(a.vhostAvailableDir, fmt.Sprintf("%s.conf", p.Domain))
+	enabledPath := filepath.Join(a.vhostEnabledDir, fmt.Sprintf("%s.conf", p.Domain))
 
 	logs := []string{fmt.Sprintf("removing vhost for domain '%s'", p.Domain)}
 
@@ -59,13 +78,15 @@ func (a *VhostRemoveAction) Execute(ctx context.Context, payload []byte, dryRun 
 		}, nil
 	}
 
-	if runtime.GOOS == "linux" {
+	if a.isLinux {
 		_ = os.Remove(enabledPath)
 		_ = os.Remove(availPath)
 
-		if _, err := exec.LookPath("nginx"); err == nil {
-			_ = exec.CommandContext(ctx, "nginx", "-t").Run()
-			_ = exec.CommandContext(ctx, "systemctl", "reload", "nginx").Run()
+		if _, err := a.executor.LookPath("nginx"); err == nil {
+			_ = a.executor.Run(ctx, "nginx", "-t")
+		}
+		if _, err := a.executor.LookPath("systemctl"); err == nil {
+			_ = a.executor.Run(ctx, "systemctl", "reload", "nginx")
 		}
 		logs = append(logs, "removed Nginx vhost files and reloaded Nginx")
 	} else {

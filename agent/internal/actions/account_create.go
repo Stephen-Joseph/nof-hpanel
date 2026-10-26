@@ -44,13 +44,18 @@ php_admin_value[error_log] = /home/{{.Username}}/logs/php_error.log
 const accountCreateNginxVhostTemplate = `server {
     listen 80;
     listen [::]:80;
-    server_name {{.PrimaryDomain}};
+    server_name {{.ServerNames}};
 
     root /home/{{.Username}}/public_html;
     index index.php index.html;
 
     access_log /home/{{.Username}}/logs/access.log;
     error_log /home/{{.Username}}/logs/error.log;
+
+    location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
+        root /home/{{.Username}}/public_html;
+    }
 
     location / {
         try_files $uri $uri/ /index.php?$query_string;
@@ -93,6 +98,11 @@ type AccountCreatePayload struct {
 	PHPMemoryMB   int    `json:"php_memory_mb"`
 	CPUCores      int    `json:"cpu_cores,omitempty"`
 	MemoryLimitMB int    `json:"memory_limit_mb,omitempty"`
+}
+
+func (p AccountCreatePayload) ServerNames() string {
+	bare := strings.TrimPrefix(p.PrimaryDomain, "www.")
+	return fmt.Sprintf("%s www.%s", bare, bare)
 }
 
 type AccountCreateAction struct {
@@ -495,6 +505,14 @@ func (a *AccountCreateAction) applyQuota(ctx context.Context, p AccountCreatePay
 			return true, "quota unsupported on this filesystem", nil
 		}
 
+		if strings.Contains(strings.ToLower(combined), "operation not permitted") {
+			quotaonOut, quotaonErr := a.executor.CombinedOutput(ctx, "quotaon", "-p", "/")
+			quotaonStr := strings.ToLower(string(quotaonOut))
+			if quotaonErr != nil || strings.Contains(quotaonStr, "is off") || strings.Contains(quotaonStr, "not supported") || strings.Contains(quotaonStr, "disabled") || !strings.Contains(quotaonStr, "is on") {
+				return true, "quota unsupported on this filesystem", nil
+			}
+		}
+
 		return false, "", fmt.Errorf("setquota command failed: %s", combined)
 	}
 
@@ -555,16 +573,20 @@ func (a *AccountCreateAction) resolveFpmBinary(version string) (string, error) {
 }
 
 func (a *AccountCreateAction) deployVhost(ctx context.Context, p AccountCreatePayload) error {
-	configContent, err := a.renderVhostConfig(p)
-	if err != nil {
-		return fmt.Errorf("rendering vhost template: %w", err)
-	}
-
 	if err := os.MkdirAll(a.vhostAvailableDir, 0755); err != nil {
 		return fmt.Errorf("ensuring vhost available dir: %w", err)
 	}
 	if err := os.MkdirAll(a.vhostEnabledDir, 0755); err != nil {
 		return fmt.Errorf("ensuring vhost enabled dir: %w", err)
+	}
+
+	if err := EnsureDefaultVhost(a.vhostAvailableDir, a.vhostEnabledDir); err != nil {
+		return fmt.Errorf("ensuring default vhost: %w", err)
+	}
+
+	configContent, err := a.renderVhostConfig(p)
+	if err != nil {
+		return fmt.Errorf("rendering vhost template: %w", err)
 	}
 
 	targetPath := filepath.Join(a.vhostAvailableDir, fmt.Sprintf("%s.conf", p.PrimaryDomain))

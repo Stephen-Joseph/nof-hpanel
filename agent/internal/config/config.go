@@ -58,7 +58,7 @@ func DefaultConfig() *Config {
 			Format:  "json",
 		},
 		System: SystemConfig{
-			TempDir: "/tmp/panel-agent",
+			TempDir: "/var/lib/panel-agent/tmp",
 		},
 	}
 }

@@ -286,7 +286,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     "format": "json"
   },
   "system": {
-    "temp_dir": "/tmp/panel-agent"
+    "temp_dir": "/var/lib/panel-agent/tmp"
   }
 }
 EOF
@@ -331,13 +331,16 @@ if ! command -v go >/dev/null 2>&1; then
     export PATH="/usr/local/go/bin:${PATH}"
 fi
 
-# Build agent static binary
+# Build agent static binary outside the temp directory
 if [ -d "${SCRIPT_DIR}/agent" ]; then
+    BUILD_DIR="/usr/local/src/panel-agent-build"
+    execute mkdir -p "$BUILD_DIR"
     (
         cd "${SCRIPT_DIR}/agent"
-        execute go build -o /usr/local/bin/panel-agent ./cmd/agent
+        execute go build -o "${BUILD_DIR}/panel-agent" ./cmd/agent
     )
-    execute chmod 755 /usr/local/bin/panel-agent
+    execute chmod 755 "${BUILD_DIR}/panel-agent"
+    execute cp -f "${BUILD_DIR}/panel-agent" /usr/local/bin/panel-agent
     execute /usr/local/bin/panel-agent -version
 fi
 

@@ -3,16 +3,25 @@ package actions
 import (
 	"context"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"time"
 )
 
-type SystemHealthAction struct{}
+type SystemHealthAction struct {
+	executor commandExecutor
+}
 
 func NewSystemHealthAction() *SystemHealthAction {
-	return &SystemHealthAction{}
+	return &SystemHealthAction{
+		executor: osCommandExecutor{},
+	}
+}
+
+func NewSystemHealthActionForTest(executor commandExecutor) *SystemHealthAction {
+	return &SystemHealthAction{
+		executor: executor,
+	}
 }
 
 func (a *SystemHealthAction) Name() string {
@@ -78,8 +87,7 @@ func (a *SystemHealthAction) Execute(ctx context.Context, payload []byte, dryRun
 
 		if runtime.GOOS == "linux" {
 			// Strict exec argument array only (Rule 4: exec argument arrays, never sh -c)
-			cmd := exec.CommandContext(ctx, "systemctl", "is-active", svc)
-			out, err := cmd.Output()
+			out, err := a.executor.CombinedOutput(ctx, "systemctl", "is-active", svc)
 			statusStr := strings.TrimSpace(string(out))
 			if err != nil && statusStr == "" {
 				statusStr = "inactive"
@@ -91,6 +99,31 @@ func (a *SystemHealthAction) Execute(ctx context.Context, payload []byte, dryRun
 	}
 
 	data["services"] = serviceStatus
+
+	// 4. Quotas enabled check (parse `quotaon -p /`)
+	quotaEnabled := false
+	quotaStatus := "disabled"
+	if runtime.GOOS == "linux" {
+		if _, err := a.executor.LookPath("quotaon"); err == nil {
+			out, err := a.executor.CombinedOutput(ctx, "quotaon", "-p", "/")
+			outStr := strings.ToLower(string(out))
+			if err == nil && (strings.Contains(outStr, "is on") || strings.Contains(outStr, "user quota on")) {
+				quotaEnabled = true
+				quotaStatus = "enabled"
+			} else {
+				quotaStatus = "disabled"
+			}
+		}
+	} else if dryRun {
+		quotaEnabled = true
+		quotaStatus = "enabled (simulated)"
+	}
+
+	data["quotas"] = map[string]any{
+		"enabled": quotaEnabled,
+		"status":  quotaStatus,
+	}
+
 	logs = append(logs, "system health check completed")
 
 	return &ActionResult{

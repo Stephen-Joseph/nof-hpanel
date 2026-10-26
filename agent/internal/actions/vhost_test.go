@@ -3,6 +3,9 @@ package actions
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -230,5 +233,352 @@ func TestVhostRemoveAndReload(t *testing.T) {
 	resReload, err := reloadAction.Execute(context.Background(), nil, true)
 	if err != nil || !resReload.Success {
 		t.Fatalf("reload dry-run failed: %v", err)
+	}
+}
+
+func extractDirective(config, directive string) string {
+	lines := strings.Split(config, "\n")
+	prefix := directive + " "
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, prefix) {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func extractDocumentRoot(config string) string {
+	lines := strings.Split(config, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "root ") && !strings.Contains(trimmed, "letsencrypt") {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func TestGenerateTwoVhostsDistinctServerNameAndRootAndDefaultCatchAll(t *testing.T) {
+	// Account 1
+	data1 := VhostTemplateData{
+		Username:     "cust01",
+		Domain:       "siteone.com",
+		DocumentRoot: "/home/cust01/public_html",
+		AppProfile:   "php-generic",
+		PHPVersion:   "8.3",
+	}
+
+	// Account 2
+	data2 := VhostTemplateData{
+		Username:     "cust02",
+		Domain:       "sitetwo.org",
+		DocumentRoot: "/home/cust02/mysite/public",
+		AppProfile:   "laravel",
+		PHPVersion:   "8.4",
+	}
+
+	cfg1, err := RenderVhostConfig(data1)
+	if err != nil {
+		t.Fatalf("failed to render vhost 1: %v", err)
+	}
+
+	cfg2, err := RenderVhostConfig(data2)
+	if err != nil {
+		t.Fatalf("failed to render vhost 2: %v", err)
+	}
+
+	// Assert vhost 1 includes server_name for primary domain and www
+	if !strings.Contains(cfg1, "server_name siteone.com www.siteone.com;") {
+		t.Errorf("vhost 1 missing expected server_name for primary domain and www:\n%s", cfg1)
+	}
+	// Assert vhost 1 has root under account home
+	if !strings.Contains(cfg1, "root /home/cust01/public_html;") {
+		t.Errorf("vhost 1 missing expected root under account home:\n%s", cfg1)
+	}
+
+	// Assert vhost 2 includes server_name for primary domain and www
+	if !strings.Contains(cfg2, "server_name sitetwo.org www.sitetwo.org;") {
+		t.Errorf("vhost 2 missing expected server_name for primary domain and www:\n%s", cfg2)
+	}
+	// Assert vhost 2 has root under account home
+	if !strings.Contains(cfg2, "root /home/cust02/mysite/public;") {
+		t.Errorf("vhost 2 missing expected root under account home:\n%s", cfg2)
+	}
+
+	// Assert each has a distinct server_name and root
+	serverName1 := extractDirective(cfg1, "server_name")
+	serverName2 := extractDirective(cfg2, "server_name")
+	if serverName1 == "" || serverName2 == "" {
+		t.Fatalf("failed to extract server_name directives from generated vhosts")
+	}
+	if serverName1 == serverName2 {
+		t.Errorf("expected distinct server_name directives, got identical: %s", serverName1)
+	}
+
+	root1 := extractDocumentRoot(cfg1)
+	root2 := extractDocumentRoot(cfg2)
+	if root1 == "" || root2 == "" {
+		t.Fatalf("failed to extract root directives from generated vhosts")
+	}
+	if root1 == root2 {
+		t.Errorf("expected distinct root directives, got identical: %s", root1)
+	}
+
+	// Assert default_server catch-all block exists that returns 444 on ports 80 and 443 (ssl_reject_handshake on for 443)
+	defaultBlock := RenderDefaultVhostConfig()
+	if !strings.Contains(defaultBlock, "listen 80 default_server;") {
+		t.Errorf("default block missing 'listen 80 default_server;':\n%s", defaultBlock)
+	}
+	if !strings.Contains(defaultBlock, "listen [::]:80 default_server;") {
+		t.Errorf("default block missing 'listen [::]:80 default_server;':\n%s", defaultBlock)
+	}
+	if !strings.Contains(defaultBlock, "listen 443 ssl default_server;") {
+		t.Errorf("default block missing 'listen 443 ssl default_server;':\n%s", defaultBlock)
+	}
+	if !strings.Contains(defaultBlock, "listen [::]:443 ssl default_server;") {
+		t.Errorf("default block missing 'listen [::]:443 ssl default_server;':\n%s", defaultBlock)
+	}
+	if !strings.Contains(defaultBlock, "ssl_reject_handshake on;") {
+		t.Errorf("default block missing 'ssl_reject_handshake on;':\n%s", defaultBlock)
+	}
+	if !strings.Contains(defaultBlock, "return 444;") {
+		t.Errorf("default block missing 'return 444;':\n%s", defaultBlock)
+	}
+	if !strings.Contains(defaultBlock, "server_name _;") {
+		t.Errorf("default block missing 'server_name _;':\n%s", defaultBlock)
+	}
+}
+
+type mockVhostExecutor struct {
+	onCombinedOutput func(name string, args ...string) ([]byte, error)
+	onRun            func(name string, args ...string) error
+	lookups          map[string]bool
+}
+
+func (m *mockVhostExecutor) CombinedOutput(_ context.Context, name string, args ...string) ([]byte, error) {
+	if m.onCombinedOutput != nil {
+		return m.onCombinedOutput(name, args...)
+	}
+	return []byte("ok"), nil
+}
+
+func (m *mockVhostExecutor) Run(_ context.Context, name string, args ...string) error {
+	if m.onRun != nil {
+		return m.onRun(name, args...)
+	}
+	return nil
+}
+
+func (m *mockVhostExecutor) LookPath(file string) (string, error) {
+	if m.lookups != nil && !m.lookups[file] {
+		return "", errors.New("not found")
+	}
+	return "/usr/bin/" + file, nil
+}
+
+func TestVhostWriteActionDeploysTwoVhostsAndDefaultCatchAllWithLinkingOrder(t *testing.T) {
+	tmp := t.TempDir()
+	availDir := filepath.Join(tmp, "sites-available")
+	enabledDir := filepath.Join(tmp, "sites-enabled")
+
+	var callSequence []string
+	var symlinkExistedDuringNginxTest []bool
+
+	exec := &mockVhostExecutor{
+		lookups: map[string]bool{
+			"nginx":     true,
+			"systemctl": true,
+		},
+		onCombinedOutput: func(name string, args ...string) ([]byte, error) {
+			cmdStr := name + " " + strings.Join(args, " ")
+			callSequence = append(callSequence, cmdStr)
+			if name == "nginx" && len(args) > 0 && args[0] == "-t" {
+				entries, err := os.ReadDir(enabledDir)
+				symlinkExistedDuringNginxTest = append(symlinkExistedDuringNginxTest, err == nil && len(entries) > 0)
+			}
+			return []byte("nginx: syntax is ok"), nil
+		},
+		onRun: func(name string, args ...string) error {
+			cmdStr := name + " " + strings.Join(args, " ")
+			callSequence = append(callSequence, cmdStr)
+			return nil
+		},
+	}
+
+	action := NewVhostWriteActionForTest(exec, availDir, enabledDir)
+
+	// Deploy Account 1 vhost
+	p1, _ := json.Marshal(VhostWritePayload{
+		Username:     "alice",
+		Domain:       "alice-app.com",
+		DocumentRoot: "/home/alice/public_html",
+	})
+	res1, err := action.Execute(context.Background(), p1, false)
+	if err != nil || !res1.Success {
+		t.Fatalf("vhost 1 execute failed: %v", err)
+	}
+
+	// Deploy Account 2 vhost
+	p2, _ := json.Marshal(VhostWritePayload{
+		Username:     "bob",
+		Domain:       "bob-portal.net",
+		DocumentRoot: "/home/bob/public_html",
+	})
+	res2, err := action.Execute(context.Background(), p2, false)
+	if err != nil || !res2.Success {
+		t.Fatalf("vhost 2 execute failed: %v", err)
+	}
+
+	// Assert default catch-all block exists in sites-available and is symlinked in sites-enabled
+	defaultAvail := filepath.Join(availDir, "00-default-deny.conf")
+	defaultEnabled := filepath.Join(enabledDir, "00-default-deny.conf")
+	defaultBytes, err := os.ReadFile(defaultAvail)
+	if err != nil {
+		t.Fatalf("expected 00-default-deny.conf in sites-available: %v", err)
+	}
+	if !strings.Contains(string(defaultBytes), "listen 80 default_server;") {
+		t.Errorf("default block missing 'listen 80 default_server;'")
+	}
+	if !strings.Contains(string(defaultBytes), "listen 443 ssl default_server;") {
+		t.Errorf("default block missing 'listen 443 ssl default_server;'")
+	}
+	if !strings.Contains(string(defaultBytes), "ssl_reject_handshake on;") {
+		t.Errorf("default block missing 'ssl_reject_handshake on;'")
+	}
+	if !strings.Contains(string(defaultBytes), "return 444;") {
+		t.Errorf("default block missing 'return 444;'")
+	}
+	if _, err := os.Lstat(defaultEnabled); err != nil {
+		t.Fatalf("expected 00-default-deny.conf symlink in sites-enabled: %v", err)
+	}
+
+	// Assert vhost 1 exists on disk with primary domain and www, and root under account home
+	vhost1Avail := filepath.Join(availDir, "alice-app.com.conf")
+	vhost1Enabled := filepath.Join(enabledDir, "alice-app.com.conf")
+	vhost1Bytes, err := os.ReadFile(vhost1Avail)
+	if err != nil {
+		t.Fatalf("vhost 1 file missing: %v", err)
+	}
+	if !strings.Contains(string(vhost1Bytes), "server_name alice-app.com www.alice-app.com;") {
+		t.Errorf("vhost 1 missing expected server_name with primary domain and www")
+	}
+	if !strings.Contains(string(vhost1Bytes), "root /home/alice/public_html;") {
+		t.Errorf("vhost 1 missing root under account home")
+	}
+	if _, err := os.Lstat(vhost1Enabled); err != nil {
+		t.Fatalf("vhost 1 symlink missing: %v", err)
+	}
+
+	// Assert vhost 2 exists on disk with primary domain and www, and root under account home
+	vhost2Avail := filepath.Join(availDir, "bob-portal.net.conf")
+	vhost2Enabled := filepath.Join(enabledDir, "bob-portal.net.conf")
+	vhost2Bytes, err := os.ReadFile(vhost2Avail)
+	if err != nil {
+		t.Fatalf("vhost 2 file missing: %v", err)
+	}
+	if !strings.Contains(string(vhost2Bytes), "server_name bob-portal.net www.bob-portal.net;") {
+		t.Errorf("vhost 2 missing expected server_name with primary domain and www")
+	}
+	if !strings.Contains(string(vhost2Bytes), "root /home/bob/public_html;") {
+		t.Errorf("vhost 2 missing root under account home")
+	}
+	if _, err := os.Lstat(vhost2Enabled); err != nil {
+		t.Fatalf("vhost 2 symlink missing: %v", err)
+	}
+
+	// Assert each vhost has distinct server_name and root
+	serverName1 := extractDirective(string(vhost1Bytes), "server_name")
+	serverName2 := extractDirective(string(vhost2Bytes), "server_name")
+	if serverName1 == "" || serverName2 == "" || serverName1 == serverName2 {
+		t.Errorf("expected distinct server_name directives on disk: v1=%q, v2=%q", serverName1, serverName2)
+	}
+
+	root1 := extractDocumentRoot(string(vhost1Bytes))
+	root2 := extractDocumentRoot(string(vhost2Bytes))
+	if root1 == "" || root2 == "" || root1 == root2 {
+		t.Errorf("expected distinct root directives on disk: v1=%q, v2=%q", root1, root2)
+	}
+
+	// Assert nginx -t was run ONLY AFTER the symlink was in sites-enabled
+	if len(symlinkExistedDuringNginxTest) != 2 {
+		t.Fatalf("expected 2 nginx -t calls, got %d", len(symlinkExistedDuringNginxTest))
+	}
+	for i, existed := range symlinkExistedDuringNginxTest {
+		if !existed {
+			t.Errorf("nginx -t call #%d occurred before symlink was linked into sites-enabled", i+1)
+		}
+	}
+
+	// Assert reload was called only after nginx -t
+	// Sequence should be: nginx -t, systemctl reload nginx, nginx -t, systemctl reload nginx
+	expectedSequence := []string{
+		"nginx -t",
+		"systemctl reload nginx",
+		"nginx -t",
+		"systemctl reload nginx",
+	}
+	if len(callSequence) != len(expectedSequence) {
+		t.Fatalf("expected command sequence %v, got %v", expectedSequence, callSequence)
+	}
+	for i, cmd := range expectedSequence {
+		if callSequence[i] != cmd {
+			t.Errorf("command #%d: expected %q, got %q", i, cmd, callSequence[i])
+		}
+	}
+}
+
+func TestVhostWriteActionRollsBackWhenNginxTestFailsAfterLinking(t *testing.T) {
+	tmp := t.TempDir()
+	availDir := filepath.Join(tmp, "sites-available")
+	enabledDir := filepath.Join(tmp, "sites-enabled")
+
+	reloadCalled := false
+	exec := &mockVhostExecutor{
+		lookups: map[string]bool{
+			"nginx":     true,
+			"systemctl": true,
+		},
+		onCombinedOutput: func(name string, args ...string) ([]byte, error) {
+			if name == "nginx" && len(args) > 0 && args[0] == "-t" {
+				return []byte("nginx: [emerg] syntax error"), errors.New("exit status 1")
+			}
+			return []byte("ok"), nil
+		},
+		onRun: func(name string, args ...string) error {
+			if name == "systemctl" && len(args) > 0 && args[0] == "reload" {
+				reloadCalled = true
+			}
+			return nil
+		},
+	}
+
+	action := NewVhostWriteActionForTest(exec, availDir, enabledDir)
+
+	p, _ := json.Marshal(VhostWritePayload{
+		Username:     "charlie",
+		Domain:       "badconfig.com",
+		DocumentRoot: "/home/charlie/public_html",
+	})
+
+	res, err := action.Execute(context.Background(), p, false)
+	if err == nil || res.Success {
+		t.Fatal("expected Execute to fail when nginx -t fails")
+	}
+
+	if reloadCalled {
+		t.Error("reload was called despite nginx -t failure")
+	}
+
+	// Assert symlink was removed (rolled back)
+	enabledFile := filepath.Join(enabledDir, "badconfig.com.conf")
+	if _, err := os.Lstat(enabledFile); !os.IsNotExist(err) {
+		t.Errorf("expected symlink to be rolled back and removed on nginx -t failure")
+	}
+
+	// Assert availFile was removed (as this was a new config with no backup)
+	availFile := filepath.Join(availDir, "badconfig.com.conf")
+	if _, err := os.Stat(availFile); !os.IsNotExist(err) {
+		t.Errorf("expected available config file to be removed on nginx -t failure")
 	}
 }

@@ -16,5 +16,5 @@ logging:
   format: "json"
 
 system:
-  temp_dir: "/tmp/panel-agent"
+  temp_dir: "/var/lib/panel-agent/tmp"
 

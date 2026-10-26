@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -49,6 +50,22 @@ func main() {
 			logWriter = io.MultiWriter(os.Stdout, f)
 		} else {
 			log.Printf("Warning: Failed to open log file %s: %v. Logging to stdout only.", cfg.Logging.LogFile, err)
+		}
+	}
+
+	// Ensure system temp directory exists with mode 0700
+	if cfg.System.TempDir != "" {
+		if err := os.MkdirAll(cfg.System.TempDir, 0700); err != nil {
+			log.Printf("Warning: Failed to create temp dir %s: %v", cfg.System.TempDir, err)
+		} else {
+			_ = os.Chmod(cfg.System.TempDir, 0700)
+		}
+	}
+
+	// Ensure default-deny vhost exists on Linux
+	if runtime.GOOS == "linux" {
+		if err := actions.EnsureDefaultVhost("/etc/nginx/sites-available", "/etc/nginx/sites-enabled"); err != nil {
+			log.Printf("Warning: Failed to ensure 00-default-deny.conf: %v", err)
 		}
 	}
 

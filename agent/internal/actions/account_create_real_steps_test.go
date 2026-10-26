@@ -308,6 +308,11 @@ func TestAccountCreateExecuteSkipsQuotaWhenUnsupported(t *testing.T) {
 			out:  []byte{},
 			err:  errors.New("quotactl syscall failed: operation not supported"),
 		},
+		{
+			name: "Operation not permitted when quotaon is off",
+			out:  []byte("setquota: Operation not permitted"),
+			err:  errors.New("exit status 1"),
+		},
 	}
 
 	for _, tc := range testCases {

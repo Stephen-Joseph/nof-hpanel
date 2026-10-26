@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -30,10 +29,74 @@ type VhostWritePayload struct {
 	CurrentWebsiteCount int                      `json:"current_website_count,omitempty"`
 }
 
-type VhostWriteAction struct{}
+type VhostWriteAction struct {
+	executor          commandExecutor
+	vhostAvailableDir string
+	vhostEnabledDir   string
+	isLinux           bool
+}
 
 func NewVhostWriteAction() *VhostWriteAction {
-	return &VhostWriteAction{}
+	return &VhostWriteAction{
+		executor:          osCommandExecutor{},
+		vhostAvailableDir: "/etc/nginx/sites-available",
+		vhostEnabledDir:   "/etc/nginx/sites-enabled",
+		isLinux:           runtime.GOOS == "linux",
+	}
+}
+
+func NewVhostWriteActionForTest(executor commandExecutor, vhostAvailableDir, vhostEnabledDir string) *VhostWriteAction {
+	return &VhostWriteAction{
+		executor:          executor,
+		vhostAvailableDir: vhostAvailableDir,
+		vhostEnabledDir:   vhostEnabledDir,
+		isLinux:           true,
+	}
+}
+
+// EnsureDefaultVhost ensures that the default_server catch-all block exists in
+// sites-available/00-default-deny.conf and is symlinked into sites-enabled/00-default-deny.conf.
+func EnsureDefaultVhost(vhostAvailableDir, vhostEnabledDir string) error {
+	defaultAvail := filepath.Join(vhostAvailableDir, "00-default-deny.conf")
+	defaultEnabled := filepath.Join(vhostEnabledDir, "00-default-deny.conf")
+
+	if err := os.MkdirAll(vhostAvailableDir, 0755); err != nil {
+		return fmt.Errorf("creating vhost available directory: %w", err)
+	}
+	if err := os.MkdirAll(vhostEnabledDir, 0755); err != nil {
+		return fmt.Errorf("creating vhost enabled directory: %w", err)
+	}
+
+	// Remove default Debian/Ubuntu placeholder link if present to avoid duplicate default_server conflicts
+	debianDefaultLink := filepath.Join(vhostEnabledDir, "default")
+	if info, err := os.Lstat(debianDefaultLink); err == nil && (info.Mode()&os.ModeSymlink != 0) {
+		_ = os.Remove(debianDefaultLink)
+	}
+
+	// Clean up legacy 00-default.conf if present
+	_ = os.Remove(filepath.Join(vhostEnabledDir, "00-default.conf"))
+	_ = os.Remove(filepath.Join(vhostAvailableDir, "00-default.conf"))
+
+	if _, err := os.Stat(defaultAvail); os.IsNotExist(err) {
+		if err := atomicWriteFile(defaultAvail, []byte(RenderDefaultVhostConfig()), 0640, -1, -1); err != nil {
+			return fmt.Errorf("committing default vhost config: %w", err)
+		}
+	}
+
+	if info, err := os.Lstat(defaultEnabled); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+		return fmt.Errorf("default vhost path exists and is not a symlink: %s", defaultEnabled)
+	} else if os.IsNotExist(err) {
+		if err := os.Symlink(defaultAvail, defaultEnabled); err != nil {
+			return fmt.Errorf("symlinking default vhost: %w", err)
+		}
+	} else {
+		return fmt.Errorf("checking default vhost symlink: %w", err)
+	}
+
+	return nil
 }
 
 func (a *VhostWriteAction) Name() string {
@@ -92,8 +155,27 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 		p.AppProfile = "php-generic"
 	}
 
-	serverNamesList := []string{p.Domain}
-	serverNamesList = append(serverNamesList, p.Aliases...)
+	if p.DocumentRoot == "" && p.Username != "" {
+		p.DocumentRoot = fmt.Sprintf("/home/%s/public_html", p.Username)
+	}
+
+	bareDomain := strings.TrimPrefix(p.Domain, "www.")
+	wwwDomain := "www." + bareDomain
+	var serverNamesList []string
+	switch p.WwwRedirect {
+	case "force_www":
+		serverNamesList = []string{wwwDomain}
+	case "strip_www":
+		serverNamesList = []string{bareDomain}
+	default:
+		serverNamesList = []string{bareDomain, wwwDomain}
+	}
+	for _, alias := range p.Aliases {
+		alias = strings.TrimSpace(alias)
+		if alias != "" && alias != bareDomain && alias != wwwDomain {
+			serverNamesList = append(serverNamesList, alias)
+		}
+	}
 	serverNames := strings.Join(serverNamesList, " ")
 
 	vhostData := VhostTemplateData{
@@ -125,8 +207,8 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 	if dryRun {
 		logs = append(logs,
 			fmt.Sprintf("[dry-run] simulated syntax validation for %s", p.Domain),
-			fmt.Sprintf("[dry-run] simulated atomic move to /etc/nginx/sites-available/%s.conf", p.Domain),
-			fmt.Sprintf("[dry-run] simulated symlink to /etc/nginx/sites-enabled/%s.conf and reload", p.Domain),
+			fmt.Sprintf("[dry-run] simulated atomic move to %s/%s.conf", a.vhostAvailableDir, p.Domain),
+			fmt.Sprintf("[dry-run] simulated symlink to %s/%s.conf and reload", a.vhostEnabledDir, p.Domain),
 		)
 		return &ActionResult{
 			Success: true,
@@ -142,12 +224,17 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 	}
 
 	// Real Linux Nginx deployment
-	availPath := fmt.Sprintf("/etc/nginx/sites-available/%s.conf", p.Domain)
-	enabledPath := fmt.Sprintf("/etc/nginx/sites-enabled/%s.conf", p.Domain)
+	availPath := filepath.Join(a.vhostAvailableDir, fmt.Sprintf("%s.conf", p.Domain))
+	enabledPath := filepath.Join(a.vhostEnabledDir, fmt.Sprintf("%s.conf", p.Domain))
 	backupPath := availPath + ".bak"
 
-	_ = os.MkdirAll(filepath.Dir(availPath), 0755)
-	_ = os.MkdirAll(filepath.Dir(enabledPath), 0755)
+	_ = os.MkdirAll(a.vhostAvailableDir, 0755)
+	_ = os.MkdirAll(a.vhostEnabledDir, 0755)
+
+	// Ensure default catch-all exists
+	if err := EnsureDefaultVhost(a.vhostAvailableDir, a.vhostEnabledDir); err != nil {
+		return &ActionResult{Success: false, Error: fmt.Sprintf("ensuring default vhost: %v", err), Logs: logs}, err
+	}
 
 	tempFile, err := CreateConfigTemp(availPath, []byte(configContent), 0640)
 	if err != nil {
@@ -155,25 +242,14 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 	}
 	defer os.Remove(tempFile)
 
-	if runtime.GOOS == "linux" {
-		// Run syntax test with nginx -t
-		if _, err := exec.LookPath("nginx"); err == nil {
-			testCmd := exec.CommandContext(ctx, "nginx", "-t")
-			if out, err := testCmd.CombinedOutput(); err != nil {
-				return &ActionResult{
-					Success: false,
-					Error:   fmt.Sprintf("nginx syntax test failed: %s", strings.TrimSpace(string(out))),
-					Logs:    logs,
-				}, fmt.Errorf("nginx test failed: %s", string(out))
-			}
-		}
-
-		// Backup previous configuration if present
+	if a.isLinux {
+		hadPreviousConfig := false
 		if _, err := os.Stat(availPath); err == nil {
+			hadPreviousConfig = true
 			_ = copyFile(availPath, backupPath)
 		}
 
-		// Atomically install new config
+		// Atomically install new config into sites-available
 		if err := CommitConfigFile(tempFile, availPath, 0640); err != nil {
 			return &ActionResult{Success: false, Error: fmt.Sprintf("failed to move config: %v", err), Logs: logs}, err
 		}
@@ -182,26 +258,58 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 		_ = os.Remove(enabledPath) // remove existing link if any
 		if err := os.Symlink(availPath, enabledPath); err != nil {
 			// Rollback
-			if _, statErr := os.Stat(backupPath); statErr == nil {
+			if hadPreviousConfig {
 				_ = CommitConfigFile(backupPath, availPath, 0640)
+				_ = os.Remove(backupPath)
+			} else {
+				_ = os.Remove(availPath)
 			}
 			return &ActionResult{Success: false, Error: fmt.Sprintf("failed to symlink: %v", err), Logs: logs}, err
 		}
 
-		// Reload Nginx
-		reloadCmd := exec.CommandContext(ctx, "systemctl", "reload", "nginx")
-		if out, err := reloadCmd.CombinedOutput(); err != nil {
-			// Rollback on reload failure
-			logs = append(logs, fmt.Sprintf("reload failed (%v), restoring backup...", err))
-			if _, statErr := os.Stat(backupPath); statErr == nil {
-				_ = CommitConfigFile(backupPath, availPath, 0640)
-				_ = exec.CommandContext(ctx, "systemctl", "reload", "nginx").Run()
+		// Run syntax test with nginx -t ONLY AFTER the file is linked into sites-enabled
+		if _, err := a.executor.LookPath("nginx"); err == nil {
+			out, err := a.executor.CombinedOutput(ctx, "nginx", "-t")
+			if err != nil {
+				// Rollback on syntax test failure
+				logs = append(logs, fmt.Sprintf("nginx -t failed (%v), rolling back...", err))
+				_ = os.Remove(enabledPath)
+				if hadPreviousConfig {
+					_ = CommitConfigFile(backupPath, availPath, 0640)
+					_ = os.Remove(backupPath)
+					// restore old link
+					_ = os.Symlink(availPath, enabledPath)
+				} else {
+					_ = os.Remove(availPath)
+				}
+				return &ActionResult{
+					Success: false,
+					Error:   fmt.Sprintf("nginx syntax test failed: %s", strings.TrimSpace(string(out))),
+					Logs:    logs,
+				}, fmt.Errorf("nginx test failed: %s", string(out))
 			}
-			return &ActionResult{
-				Success: false,
-				Error:   fmt.Sprintf("nginx reload failed: %s", strings.TrimSpace(string(out))),
-				Logs:    logs,
-			}, err
+		}
+
+		// Reload Nginx only after syntax test passed with the file linked in sites-enabled
+		if _, err := a.executor.LookPath("systemctl"); err == nil {
+			if err := a.executor.Run(ctx, "systemctl", "reload", "nginx"); err != nil {
+				// Rollback on reload failure
+				logs = append(logs, fmt.Sprintf("reload failed (%v), restoring backup...", err))
+				_ = os.Remove(enabledPath)
+				if hadPreviousConfig {
+					_ = CommitConfigFile(backupPath, availPath, 0640)
+					_ = os.Remove(backupPath)
+					_ = os.Symlink(availPath, enabledPath)
+					_ = a.executor.Run(ctx, "systemctl", "reload", "nginx")
+				} else {
+					_ = os.Remove(availPath)
+				}
+				return &ActionResult{
+					Success: false,
+					Error:   fmt.Sprintf("nginx reload failed: %v", err),
+					Logs:    logs,
+				}, err
+			}
 		}
 
 		_ = os.Remove(backupPath)

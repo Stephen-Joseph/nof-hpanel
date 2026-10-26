@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,6 +53,35 @@ func TestServerHealthz(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK, got %d", rec.Code)
+	}
+}
+
+func TestServerHealth(t *testing.T) {
+	srv, _, _ := setupTestServer("secret")
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rec.Code)
+	}
+
+	var health map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &health); err != nil {
+		t.Fatalf("failed to decode health JSON: %v", err)
+	}
+	if health["status"] != "ok" {
+		t.Errorf("expected status 'ok', got %v", health["status"])
+	}
+	if health["version"] == nil || health["version"] == "" {
+		t.Errorf("expected version to be present, got %v", health["version"])
+	}
+	if health["quotas"] == nil {
+		t.Errorf("expected quotas to be present in health response")
+	}
+	if health["services"] == nil {
+		t.Errorf("expected services to be present in health response")
 	}
 }
 
@@ -234,6 +264,17 @@ func TestServerActionValidationReturns422(t *testing.T) {
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422 for validation error, got %d body=%s", rec.Code, rec.Body.String())
 	}
+
+	var errResp ErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("failed to decode 422 error response: %v", err)
+	}
+	if errResp.Error.Code != "VALIDATION_FAILED" {
+		t.Errorf("expected error code VALIDATION_FAILED, got %s", errResp.Error.Code)
+	}
+	if errResp.Error.Message == "" {
+		t.Error("expected non-empty error message")
+	}
 }
 
 func TestServerActionExecutionFailureReturns500(t *testing.T) {
@@ -261,5 +302,16 @@ func TestServerActionExecutionFailureReturns500(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 for action execution failure, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var errResp ErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("failed to decode 500 error response: %v", err)
+	}
+	if errResp.Error.Code != "STEP_FAILED" {
+		t.Errorf("expected error code STEP_FAILED, got %s", errResp.Error.Code)
+	}
+	if !strings.Contains(errResp.Error.Message, "php-fpm syntax test failed") {
+		t.Errorf("expected error message to contain cause, got %s", errResp.Error.Message)
 	}
 }

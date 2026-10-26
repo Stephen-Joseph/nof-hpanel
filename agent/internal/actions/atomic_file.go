@@ -76,15 +76,33 @@ func CommitConfigFile(tmpPath, dest string, perm os.FileMode) error {
 	return nil
 }
 
+// atomicWriteFile atomically writes data to dest by creating a temporary file
+// in filepath.Dir(dest) using pattern "." + filepath.Base(dest) + ".tmp-*",
+// writing, fsyncing, closing, chowning (if uid >= 0 and gid >= 0), chmodding,
+// and atomically renaming into dest (with fallback copy-and-replace in the same directory).
+// On any error, the temporary file is removed.
+func atomicWriteFile(dest string, data []byte, mode os.FileMode, uid, gid int) error {
+	tmpPath, err := CreateConfigTemp(dest, data, mode)
+	if err != nil {
+		return err
+	}
+	if uid >= 0 && gid >= 0 {
+		_ = os.Chown(tmpPath, uid, gid)
+	}
+	if err := CommitConfigFile(tmpPath, dest, mode); err != nil {
+		return err
+	}
+	if uid >= 0 && gid >= 0 {
+		_ = os.Chown(dest, uid, gid)
+	}
+	return nil
+}
+
 // WriteConfigFileAtomically writes content to a temporary file in dest's directory,
 // fsyncs, closes, chmods, and atomically installs it to dest (with copy-and-replace fallback).
 // On any error, the temporary file is removed.
 func WriteConfigFileAtomically(dest string, content []byte, perm os.FileMode) error {
-	tmpPath, err := CreateConfigTemp(dest, content, perm)
-	if err != nil {
-		return err
-	}
-	return CommitConfigFile(tmpPath, dest, perm)
+	return atomicWriteFile(dest, content, perm, -1, -1)
 }
 
 func copyAndReplace(src, dest string, perm os.FileMode) error {

@@ -57,7 +57,7 @@ server {
     # Shared ACME challenge handler for Let's Encrypt / Certbot
     location ^~ /.well-known/acme-challenge/ {
         default_type "text/plain";
-        root /var/www/letsencrypt;
+        root {{.DocumentRoot}};
     }
 
     location / {
@@ -98,7 +98,7 @@ server {
     # Shared ACME challenge handler for Let's Encrypt / Certbot
     location ^~ /.well-known/acme-challenge/ {
         default_type "text/plain";
-        root /var/www/letsencrypt;
+        root {{.DocumentRoot}};
     }
 {{else}}
 server {
@@ -109,7 +109,7 @@ server {
     # Shared ACME challenge handler for Let's Encrypt / Certbot
     location ^~ /.well-known/acme-challenge/ {
         default_type "text/plain";
-        root /var/www/letsencrypt;
+        root {{.DocumentRoot}};
     }
 {{end}}
 
@@ -315,6 +315,30 @@ func buildProtectedDirsBlock(dirs []ProtectedDirectoryRule, username, phpVersion
 	return sb.String()
 }
 
+// DefaultCatchAllVhostTemplate drops all undefined host requests on ports 80 and 443.
+const DefaultCatchAllVhostTemplate = `# HPanel Default Catch-All Configuration
+# Drops all undefined host requests on ports 80 and 443
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 444;
+}
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name _;
+    ssl_reject_handshake on;
+    return 444;
+}
+`
+
+// RenderDefaultVhostConfig returns the default_server catch-all configuration block.
+func RenderDefaultVhostConfig() string {
+	return DefaultCatchAllVhostTemplate
+}
+
 // RenderVhostConfig renders the full Nginx server block configuration.
 func RenderVhostConfig(data VhostTemplateData) (string, error) {
 	if data.PHPVersion == "" {
@@ -322,6 +346,42 @@ func RenderVhostConfig(data VhostTemplateData) (string, error) {
 	}
 	if data.AppProfile == "" {
 		data.AppProfile = "php-generic"
+	}
+	if data.DocumentRoot == "" && data.Username != "" {
+		data.DocumentRoot = fmt.Sprintf("/home/%s/public_html", data.Username)
+	}
+
+	bareDomain := strings.TrimPrefix(data.Domain, "www.")
+	wwwDomain := "www." + bareDomain
+
+	if data.ServerNames == "" {
+		switch data.WwwRedirect {
+		case "force_www":
+			data.ServerNames = wwwDomain
+		case "strip_www":
+			data.ServerNames = bareDomain
+		default:
+			data.ServerNames = fmt.Sprintf("%s %s", bareDomain, wwwDomain)
+		}
+	} else if data.WwwRedirect != "force_www" && data.WwwRedirect != "strip_www" {
+		names := strings.Fields(data.ServerNames)
+		hasBare := false
+		hasWww := false
+		for _, n := range names {
+			if n == bareDomain {
+				hasBare = true
+			}
+			if n == wwwDomain {
+				hasWww = true
+			}
+		}
+		if !hasBare {
+			names = append([]string{bareDomain}, names...)
+		}
+		if !hasWww {
+			names = append(names, wwwDomain)
+		}
+		data.ServerNames = strings.Join(names, " ")
 	}
 
 	data.WwwRedirectBlock = buildWwwRedirectBlock(data.Domain, data.WwwRedirect)

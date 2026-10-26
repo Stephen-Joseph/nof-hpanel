@@ -206,3 +206,40 @@ func TestCreateConfigTempPhpFpmPoolAndNginxVhostPaths(t *testing.T) {
 		t.Fatalf("vhostDest not found after commit: %v", err)
 	}
 }
+
+func TestAtomicWriteFileBesideDestination(t *testing.T) {
+	destDir := t.TempDir()
+	dest := filepath.Join(destDir, "fpm-pool.conf")
+	content := []byte("[cust01]\nuser = cust01\n")
+
+	// Call atomicWriteFile
+	if err := atomicWriteFile(dest, content, 0640, -1, -1); err != nil {
+		t.Fatalf("atomicWriteFile failed: %v", err)
+	}
+
+	// Verify destination exists and has correct content
+	readData, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("failed reading destination file: %v", err)
+	}
+	if string(readData) != string(content) {
+		t.Fatalf("content mismatch, expected %q, got %q", string(content), string(readData))
+	}
+
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatalf("failed to stat destination file: %v", err)
+	}
+	if info.Mode().Perm() != 0640 {
+		t.Fatalf("expected perm 0640, got %v", info.Mode().Perm())
+	}
+
+	// Verify no temporary files remain in the destination directory
+	entries, err := os.ReadDir(destDir)
+	if err != nil {
+		t.Fatalf("failed to read destDir: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "fpm-pool.conf" {
+		t.Fatalf("unexpected entries in destDir: %v", entries)
+	}
+}
