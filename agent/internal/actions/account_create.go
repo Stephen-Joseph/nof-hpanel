@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -74,6 +75,19 @@ type commandExecutor interface {
 	LookPath(file string) (string, error)
 }
 
+type stdinExecutor interface {
+	RunStdin(ctx context.Context, stdin io.Reader, name string, args ...string) ([]byte, error)
+}
+
+func runWithStdin(ctx context.Context, executor commandExecutor, stdin io.Reader, name string, args ...string) ([]byte, error) {
+	if se, ok := executor.(stdinExecutor); ok {
+		return se.RunStdin(ctx, stdin, name, args...)
+	}
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = stdin
+	return cmd.CombinedOutput()
+}
+
 type osCommandExecutor struct{}
 
 func (osCommandExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -82,6 +96,12 @@ func (osCommandExecutor) CombinedOutput(ctx context.Context, name string, args .
 
 func (osCommandExecutor) Run(ctx context.Context, name string, args ...string) error {
 	return exec.CommandContext(ctx, name, args...).Run()
+}
+
+func (osCommandExecutor) RunStdin(ctx context.Context, stdin io.Reader, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = stdin
+	return cmd.CombinedOutput()
 }
 
 func (osCommandExecutor) LookPath(file string) (string, error) {
@@ -98,6 +118,8 @@ type AccountCreatePayload struct {
 	PHPMemoryMB   int    `json:"php_memory_mb"`
 	CPUCores      int    `json:"cpu_cores,omitempty"`
 	MemoryLimitMB int    `json:"memory_limit_mb,omitempty"`
+	EnableSftp    bool   `json:"enable_sftp,omitempty"`
+	SftpPassword  string `json:"sftp_password,omitempty"`
 }
 
 func (p AccountCreatePayload) ServerNames() string {
@@ -234,9 +256,11 @@ func (a *AccountCreateAction) Execute(ctx context.Context, payload []byte, dryRu
 			fmt.Sprintf("[dry-run] simulated quota apply: %d MB, %d inodes", p.StorageMB, p.Inodes),
 			fmt.Sprintf("[dry-run] rendered PHP-FPM pool for version %s (%d bytes)", p.PHPVersion, len(poolConfig)),
 			fmt.Sprintf("[dry-run] simulated Nginx vhost for %s", p.PrimaryDomain),
-			fmt.Sprintf("[dry-run] simulated sshd chroot match block: /etc/ssh/sshd_config.d/hpanel-%s.conf", p.Username),
 			fmt.Sprintf("[dry-run] simulated systemd slice limits: %d cores, %d MB RAM", p.CPUCores, p.MemoryLimitMB),
 		)
+		if p.EnableSftp || p.SftpPassword != "" {
+			logs = append(logs, fmt.Sprintf("[dry-run] simulated sshd match block: /etc/ssh/sshd_config.d/50-hpanel-%s.conf", p.Username))
+		}
 
 		return &ActionResult{
 			Success: true,
@@ -304,10 +328,31 @@ func (a *AccountCreateAction) Execute(ctx context.Context, payload []byte, dryRu
 	}
 	logs = append(logs, fmt.Sprintf("deployed vhost for domain '%s'", p.PrimaryDomain))
 
-	if err := a.deploySshdConfig(ctx, p); err != nil {
-		return a.stepFailure("sftp_chroot", err, logs)
+	if p.EnableSftp || p.SftpPassword != "" {
+		if err := a.deploySshdConfig(ctx, p); err != nil {
+			return a.stepFailure("sftp_enable", err, logs)
+		}
+		logs = append(logs, fmt.Sprintf("configured SFTP access block for user '%s'", p.Username))
+
+		if p.SftpPassword != "" {
+			if len(p.SftpPassword) < 12 {
+				return a.stepFailure("sftp_password", errors.New("sftp_password must be at least 12 characters"), logs)
+			}
+			stdin := strings.NewReader(fmt.Sprintf("%s:%s\n", p.Username, p.SftpPassword))
+			if _, err := runWithStdin(ctx, a.executor, stdin, "chpasswd"); err != nil {
+				return a.stepFailure("sftp_password", fmt.Errorf("chpasswd failed: %w", err), logs)
+			}
+			logs = append(logs, fmt.Sprintf("configured initial SFTP password for user '%s'", p.Username))
+		}
+	} else {
+		// Clean up any old match block if present
+		sshdDir := a.sshdConfigDir
+		if sshdDir == "" {
+			sshdDir = "/etc/ssh/sshd_config.d"
+		}
+		_ = os.Remove(filepath.Join(sshdDir, fmt.Sprintf("50-hpanel-%s.conf", p.Username)))
+		_ = os.Remove(filepath.Join(sshdDir, fmt.Sprintf("hpanel-%s.conf", p.Username)))
 	}
-	logs = append(logs, fmt.Sprintf("configured SFTP chroot match block for user '%s'", p.Username))
 
 	if err := a.applySystemdSlice(ctx, p); err != nil {
 		return a.stepFailure("systemd_slice", err, logs)
@@ -716,22 +761,33 @@ func (a *AccountCreateAction) deploySshdConfig(ctx context.Context, p AccountCre
 		return fmt.Errorf("failed to create sshd_config.d: %w", err)
 	}
 
-	confPath := filepath.Join(sshdDir, fmt.Sprintf("hpanel-%s.conf", p.Username))
-	content := fmt.Sprintf(`# HPanel SFTP Chroot configuration for %s
+	confPath := filepath.Join(sshdDir, fmt.Sprintf("50-hpanel-%s.conf", p.Username))
+	content := fmt.Sprintf(`# HPanel SFTP access for %s
+# Note: ChrootDirectory is omitted in this phase due to home ownership (0711).
+# A dedicated chroot layout (/var/chroot/%s) will be introduced in a future release.
 Match User %s
-    ChrootDirectory /home/%s
-    ForceCommand internal-sftp
+    ForceCommand internal-sftp -u 022
     AllowTcpForwarding no
     X11Forwarding no
+    PasswordAuthentication yes
 `, p.Username, p.Username, p.Username)
 
+	// Clean up legacy non-prefixed file if present
+	legacyPath := filepath.Join(sshdDir, fmt.Sprintf("hpanel-%s.conf", p.Username))
+	_ = os.Remove(legacyPath)
+
+	prevData, _ := os.ReadFile(confPath)
 	if err := atomicWriteFile(confPath, []byte(content), 0644, 0, 0); err != nil {
 		return fmt.Errorf("failed to write sshd match block: %w", err)
 	}
 
 	// Validate with sshd -t
 	if out, err := a.executor.CombinedOutput(ctx, "sshd", "-t"); err != nil {
-		_ = os.Remove(confPath)
+		if prevData != nil {
+			_ = atomicWriteFile(confPath, prevData, 0644, 0, 0)
+		} else {
+			_ = os.Remove(confPath)
+		}
 		return fmt.Errorf("sshd -t validation failed: %s: %w", string(out), err)
 	}
 

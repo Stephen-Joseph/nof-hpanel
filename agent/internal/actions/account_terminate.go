@@ -227,15 +227,22 @@ func (a *AccountTerminateAction) Execute(ctx context.Context, payload []byte, dr
 	}
 
 	// Step 6: Remove sshd match block
+	sshd50Conf := filepath.Join(a.sshdConfigDir, fmt.Sprintf("50-hpanel-%s.conf", p.Username))
 	sshdConf := filepath.Join(a.sshdConfigDir, fmt.Sprintf("hpanel-%s.conf", p.Username))
+	removedSshd := false
+	if _, err := os.Stat(sshd50Conf); err == nil {
+		_ = os.Remove(sshd50Conf)
+		removedSshd = true
+	}
 	if _, err := os.Stat(sshdConf); err == nil {
 		_ = os.Remove(sshdConf)
-		if a.isLinux {
-			if out, err := a.executor.CombinedOutput(ctx, "sshd", "-t"); err == nil {
-				_ = a.executor.Run(ctx, "systemctl", "reload", "ssh")
-			} else {
-				logs = append(logs, fmt.Sprintf("sshd -t check warning after removing match block: %s", string(out)))
-			}
+		removedSshd = true
+	}
+	if removedSshd && a.isLinux {
+		if out, err := a.executor.CombinedOutput(ctx, "sshd", "-t"); err == nil {
+			_ = a.executor.Run(ctx, "systemctl", "reload", "ssh")
+		} else {
+			logs = append(logs, fmt.Sprintf("sshd -t check warning after removing match block: %s", string(out)))
 		}
 	}
 
@@ -313,6 +320,9 @@ func (a *AccountTerminateAction) Execute(ctx context.Context, payload []byte, dr
 	}
 
 	// Check SSHD match block
+	if _, err := os.Stat(sshd50Conf); err == nil {
+		leftovers = append(leftovers, sshd50Conf)
+	}
 	if _, err := os.Stat(sshdConf); err == nil {
 		leftovers = append(leftovers, sshdConf)
 	}

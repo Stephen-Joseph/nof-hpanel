@@ -67,6 +67,14 @@ func main() {
 		if err := actions.EnsureDefaultVhost("/etc/nginx/sites-available", "/etc/nginx/sites-enabled"); err != nil {
 			log.Printf("Warning: Failed to ensure 00-default-deny.conf: %v", err)
 		}
+		// Ensure global sshd configuration (00-hpanel.conf) and comment out PasswordAuthentication no in main config
+		if err := actions.EnsureGlobalSshdConfig(context.Background(), "/etc/ssh/sshd_config", "/etc/ssh/sshd_config.d", nil); err != nil {
+			log.Printf("Warning: Failed to ensure global sshd config: %v", err)
+		}
+		// Migrate legacy subuser drop-ins with ChrootDirectory
+		if err := actions.MigrateLegacySubuserDropins(context.Background(), "/etc/ssh/sshd_config.d", nil); err != nil {
+			log.Printf("Warning: Failed to migrate legacy subuser drop-ins: %v", err)
+		}
 	}
 
 	// Initialize sliding window nonce tracker
@@ -149,6 +157,10 @@ func main() {
 	registry.Register(actions.NewSshKeyAddAction())
 	registry.Register(actions.NewSshKeyRemoveAction())
 	registry.Register(actions.NewSftpAccountCreateAction())
+	registry.Register(actions.NewSftpEnableAction())
+	registry.Register(actions.NewSftpDisableAction())
+	registry.Register(actions.NewSftpSetPasswordAction())
+	registry.Register(actions.NewSshdEffectiveAction())
 
 	registry.Register(actions.NewDbCreateAction())
 	registry.Register(actions.NewDbDropAction())

@@ -212,6 +212,56 @@ execute apt-get install -y \
 
 echo -e "${GREEN}✓ Core server packages installed successfully.${NC}"
 
+# OpenSSH SFTP Baseline Configuration
+echo -e "${BLUE}Configuring OpenSSH baseline for customer SFTP (/etc/ssh/sshd_config.d/00-hpanel.conf)...${NC}"
+if [ -f /etc/ssh/sshd_config ]; then
+    if grep -qE '^[ \t]*(PasswordAuthentication|KbdInteractiveAuthentication)[ \t]+no' /etc/ssh/sshd_config; then
+        if [ "$DRY_RUN" = false ]; then
+            if [ ! -f /etc/ssh/sshd_config.hpanel.bak ]; then
+                cp -p /etc/ssh/sshd_config /etc/ssh/sshd_config.hpanel.bak
+            fi
+            sed -i -E 's/^[ \t]*PasswordAuthentication[ \t]+no/# PasswordAuthentication no (disabled by HPanel)/g' /etc/ssh/sshd_config
+            sed -i -E 's/^[ \t]*KbdInteractiveAuthentication[ \t]+no/# KbdInteractiveAuthentication no (disabled by HPanel)/g' /etc/ssh/sshd_config
+            if ! sshd -t; then
+                echo -e "${RED}Error: sshd -t failed after modifying /etc/ssh/sshd_config. Restoring backup.${NC}"
+                cp -f /etc/ssh/sshd_config.hpanel.bak /etc/ssh/sshd_config
+            fi
+        else
+            echo -e "${YELLOW}[DRY-RUN] Would comment out PasswordAuthentication no and KbdInteractiveAuthentication no in /etc/ssh/sshd_config${NC}"
+        fi
+    fi
+fi
+
+if [ "$DRY_RUN" = false ]; then
+    mkdir -p /etc/ssh/sshd_config.d
+    SFTP_SERVER_BIN="/usr/lib/openssh/sftp-server"
+    for cand in /usr/lib/openssh/sftp-server /usr/libexec/openssh/sftp-server /usr/lib/ssh/sftp-server /usr/libexec/sftp-server; do
+        if [ -f "$cand" ]; then
+            SFTP_SERVER_BIN="$cand"
+            break
+        fi
+    done
+
+    cat << EOF > /etc/ssh/sshd_config.d/00-hpanel.conf.tmp
+# Managed by HPanel - Global SFTP and SSH baseline
+PasswordAuthentication yes
+KbdInteractiveAuthentication yes
+PubkeyAuthentication yes
+Subsystem sftp ${SFTP_SERVER_BIN}
+EOF
+    mv -f /etc/ssh/sshd_config.d/00-hpanel.conf.tmp /etc/ssh/sshd_config.d/00-hpanel.conf
+    chmod 644 /etc/ssh/sshd_config.d/00-hpanel.conf
+    if sshd -t; then
+        systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+        echo -e "${GREEN}✓ OpenSSH global baseline configured (/etc/ssh/sshd_config.d/00-hpanel.conf).${NC}"
+    else
+        echo -e "${RED}Error: sshd -t validation failed for 00-hpanel.conf.${NC}"
+        rm -f /etc/ssh/sshd_config.d/00-hpanel.conf
+    fi
+else
+    echo -e "${YELLOW}[DRY-RUN] Would deploy /etc/ssh/sshd_config.d/00-hpanel.conf and reload ssh service${NC}"
+fi
+
 # 4. Enabling Filesystem Quotas
 echo -e "${BLUE}[4/8] Initializing disk quota subsystem...${NC}"
 if [ "$ENABLE_QUOTA" = true ]; then

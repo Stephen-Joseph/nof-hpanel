@@ -230,13 +230,15 @@ func (a *SftpAccountCreateAction) Execute(ctx context.Context, payload []byte, d
 	}
 
 	confPath := filepath.Join(sshdDir, fmt.Sprintf("hpanel-subuser-%s.conf", p.Subuser))
-	content := fmt.Sprintf(`# HPanel SFTP Chroot configuration for subuser %s
+	content := fmt.Sprintf(`# HPanel SFTP access for subuser %s
+# Note: ChrootDirectory is omitted in this phase due to home ownership (0711).
+# A dedicated chroot layout (/var/chroot/%s) will be introduced in a future release.
 Match User %s
-    ChrootDirectory %s
-    ForceCommand internal-sftp
+    ForceCommand internal-sftp -u 022
     AllowTcpForwarding no
     X11Forwarding no
-`, p.Subuser, p.Subuser, safeHomedir)
+    PasswordAuthentication yes
+`, p.Subuser, p.Subuser, p.Subuser)
 
 	if err := atomicWriteFile(confPath, []byte(content), 0644, 0, 0); err != nil {
 		return &ActionResult{Success: false, Error: err.Error()}, err

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -40,6 +41,7 @@ func TestAccountCreateSshdMatchBlockSuccessAndRollback(t *testing.T) {
 			PHPVersion:    "8.4",
 			StorageMB:     1024,
 			Inodes:        50000,
+			EnableSftp:    true,
 		})
 
 		res, err := action.Execute(context.Background(), payload, false)
@@ -50,7 +52,7 @@ func TestAccountCreateSshdMatchBlockSuccessAndRollback(t *testing.T) {
 			t.Fatalf("expected success, got error: %s", res.Error)
 		}
 
-		confPath := filepath.Join(sshdDir, "hpanel-sftpuser1.conf")
+		confPath := filepath.Join(sshdDir, "50-hpanel-sftpuser1.conf")
 		data, err := os.ReadFile(confPath)
 		if err != nil {
 			t.Fatalf("expected sshd conf to exist: %v", err)
@@ -59,11 +61,14 @@ func TestAccountCreateSshdMatchBlockSuccessAndRollback(t *testing.T) {
 		if !strings.Contains(content, "Match User sftpuser1") {
 			t.Errorf("expected Match User sftpuser1 in config, got:\n%s", content)
 		}
-		if !strings.Contains(content, "ChrootDirectory /home/sftpuser1") {
-			t.Errorf("expected ChrootDirectory /home/sftpuser1 in config, got:\n%s", content)
+		if regexp.MustCompile(`(?m)^[ \t]*ChrootDirectory\b`).MatchString(content) {
+			t.Errorf("expected NO ChrootDirectory directive in config for sftpuser1, got:\n%s", content)
 		}
-		if !strings.Contains(content, "ForceCommand internal-sftp") {
-			t.Errorf("expected ForceCommand internal-sftp in config, got:\n%s", content)
+		if !strings.Contains(content, "ForceCommand internal-sftp -u 022") {
+			t.Errorf("expected ForceCommand internal-sftp -u 022 in config, got:\n%s", content)
+		}
+		if !strings.Contains(content, "PasswordAuthentication yes") {
+			t.Errorf("expected PasswordAuthentication yes in config, got:\n%s", content)
 		}
 	})
 
@@ -96,6 +101,7 @@ func TestAccountCreateSshdMatchBlockSuccessAndRollback(t *testing.T) {
 			PHPVersion:    "8.4",
 			StorageMB:     1024,
 			Inodes:        50000,
+			EnableSftp:    true,
 		})
 
 		res, err := action.Execute(context.Background(), payload, false)
@@ -109,7 +115,7 @@ func TestAccountCreateSshdMatchBlockSuccessAndRollback(t *testing.T) {
 			t.Errorf("expected error to mention sshd -t validation failed, got: %s", res.Error)
 		}
 
-		confPath := filepath.Join(sshdDir, "hpanel-sftpbad1.conf")
+		confPath := filepath.Join(sshdDir, "50-hpanel-sftpbad1.conf")
 		if _, err := os.Stat(confPath); !os.IsNotExist(err) {
 			t.Errorf("expected config file to be rolled back/removed, but it exists: %v", err)
 		}
@@ -152,8 +158,14 @@ func TestSftpAccountCreateMatchBlockSuccessAndRollback(t *testing.T) {
 		if !strings.Contains(content, "Match User parent1_sub1") {
 			t.Errorf("expected Match User parent1_sub1 in config, got:\n%s", content)
 		}
-		if !strings.Contains(content, "ChrootDirectory /home/parent1/public_html/dev") {
-			t.Errorf("expected ChrootDirectory in config, got:\n%s", content)
+		if regexp.MustCompile(`(?m)^[ \t]*ChrootDirectory\b`).MatchString(content) {
+			t.Errorf("expected NO ChrootDirectory directive in config for parent1_sub1, got:\n%s", content)
+		}
+		if !strings.Contains(content, "ForceCommand internal-sftp -u 022") {
+			t.Errorf("expected ForceCommand internal-sftp -u 022 in config, got:\n%s", content)
+		}
+		if !strings.Contains(content, "PasswordAuthentication yes") {
+			t.Errorf("expected PasswordAuthentication yes in config, got:\n%s", content)
 		}
 	})
 

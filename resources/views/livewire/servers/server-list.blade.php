@@ -64,6 +64,11 @@
                                         {{ $srv->status === App\Enums\ServerStatus::ACTIVE ? 'Drain' : 'Undrain' }}
                                     </button>
 
+                                    <button type="button" wire:click="openSftpDiagnosticModal({{ $srv->id }})"
+                                        class="text-sky-500 hover:text-sky-600 font-medium cursor-pointer">
+                                        SFTP Test
+                                    </button>
+
                                     <a href="{{ route('servers.edit', $srv) }}" class="text-primary-500 hover:text-primary-600 font-medium">
                                         Edit
                                     </a>
@@ -135,6 +140,86 @@
                         </div>
                     </form>
                 @endif
+            </div>
+        </div>
+    @endif
+
+    <!-- Server SFTP Diagnostic Modal -->
+    @if ($showSftpDiagnosticModal && $selectedServer)
+        <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-card border border-border rounded-[24px] max-w-lg w-full p-6 shadow-2xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-base font-semibold text-main">SFTP Configuration Diagnostic</h3>
+                    <button type="button" wire:click="closeSftpDiagnosticModal" class="text-muted hover:text-main text-lg">&times;</button>
+                </div>
+                <p class="text-xs text-muted mb-4">
+                    Evaluate effective OpenSSH configuration (<code class="text-primary-500 font-mono">sshd -T -C user=...</code>) on 
+                    <span class="font-semibold text-main">{{ $selectedServer->name }}</span> ({{ $selectedServer->private_ip }}).
+                </p>
+
+                <form wire:submit.prevent="runSftpDiagnostic" class="space-y-4 mb-4">
+                    <div>
+                        <label class="block text-xs font-medium text-muted mb-1.5">Test Username</label>
+                        <div class="flex gap-2">
+                            <x-ui.input type="text" wire:model="sftpDiagnosticUsername" placeholder="e.g. admin263" class="font-mono text-xs flex-1" />
+                            <x-ui.button type="submit" variant="primary" size="sm">
+                                <span wire:loading.remove wire:target="runSftpDiagnostic">Run Diagnostic</span>
+                                <span wire:loading wire:target="runSftpDiagnostic">Testing...</span>
+                            </x-ui.button>
+                        </div>
+                        @error('sftpDiagnosticUsername') <span class="text-rose-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+                    </div>
+                </form>
+
+                @if ($sftpDiagnosticError)
+                    <div class="p-3.5 rounded-[14px] bg-rose-500/10 border border-rose-500/20 text-xs text-rose-500 dark:text-rose-400 mb-4">
+                        {{ $sftpDiagnosticError }}
+                    </div>
+                @endif
+
+                @if ($sftpDiagnosticResult)
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-3 text-xs">
+                            <div class="p-3 bg-shell rounded-[14px] border border-border">
+                                <span class="text-muted block text-[11px] mb-1">User Exists on Host</span>
+                                <x-ui.chip :variant="!empty($sftpDiagnosticResult['user_exists']) ? 'success' : 'danger'" size="sm">
+                                    {{ !empty($sftpDiagnosticResult['user_exists']) ? 'Yes (UID exists)' : 'No (useradd needed)' }}
+                                </x-ui.chip>
+                            </div>
+                            <div class="p-3 bg-shell rounded-[14px] border border-border">
+                                <span class="text-muted block text-[11px] mb-1">Password Authentication</span>
+                                <x-ui.chip :variant="strtolower($sftpDiagnosticResult['password_authentication'] ?? '') === 'yes' ? 'success' : 'danger'" size="sm">
+                                    {{ $sftpDiagnosticResult['password_authentication'] ?? 'unknown' }}
+                                </x-ui.chip>
+                            </div>
+                            <div class="p-3 bg-shell rounded-[14px] border border-border col-span-2">
+                                <span class="text-muted block text-[11px] mb-1">ForceCommand</span>
+                                <span class="font-mono text-xs font-semibold {{ str_contains($sftpDiagnosticResult['force_command'] ?? '', 'internal-sftp') ? 'text-emerald-500' : 'text-amber-500' }}">
+                                    {{ $sftpDiagnosticResult['force_command'] ?: '(none)' }}
+                                </span>
+                            </div>
+                            <div class="p-3 bg-shell rounded-[14px] border border-border col-span-2">
+                                <span class="text-muted block text-[11px] mb-1">ChrootDirectory</span>
+                                <span class="font-mono text-xs {{ empty($sftpDiagnosticResult['chroot_directory']) || $sftpDiagnosticResult['chroot_directory'] === 'none' ? 'text-emerald-500' : 'text-amber-500' }}">
+                                    {{ empty($sftpDiagnosticResult['chroot_directory']) || $sftpDiagnosticResult['chroot_directory'] === 'none' ? 'none (Root-ownership conflict avoided)' : $sftpDiagnosticResult['chroot_directory'] }}
+                                </span>
+                            </div>
+                        </div>
+
+                        @if (!empty($sftpDiagnosticResult['effective_output']))
+                            <div>
+                                <span class="text-[11px] font-medium text-muted block mb-1">Raw Output</span>
+                                <pre class="p-3 bg-shell text-main font-mono text-[11px] rounded-[14px] border border-border overflow-x-auto max-h-36">{{ $sftpDiagnosticResult['effective_output'] }}</pre>
+                            </div>
+                        @endif
+                    </div>
+                @endif
+
+                <div class="flex justify-end pt-4 mt-4 border-t border-border">
+                    <x-ui.button type="button" wire:click="closeSftpDiagnosticModal" variant="outline" size="sm">
+                        Close
+                    </x-ui.button>
+                </div>
             </div>
         </div>
     @endif

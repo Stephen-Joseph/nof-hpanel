@@ -7,6 +7,7 @@ use App\Models\Server;
 use App\Models\ServerEnrollmentToken;
 use App\Models\ServerGroup;
 use App\Models\User;
+use App\Services\AgentClient;
 use App\Services\AuditService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -24,6 +25,19 @@ class ServerList extends Component
     public string $generatedToken = '';
 
     public string $enrollInstallCommand = '';
+
+    // SFTP live diagnostic
+    public bool $showSftpDiagnosticModal = false;
+
+    public ?int $selectedServerId = null;
+
+    public ?Server $selectedServer = null;
+
+    public string $sftpDiagnosticUsername = '';
+
+    public ?array $sftpDiagnosticResult = null;
+
+    public ?string $sftpDiagnosticError = null;
 
     public function toggleDrain(int $id, AuditService $audit): void
     {
@@ -110,6 +124,68 @@ class ServerList extends Component
         $server->delete();
 
         session()->flash('status', 'Server node successfully removed.');
+    }
+
+    public function openSftpDiagnosticModal(int $serverId): void
+    {
+        $server = Server::findOrFail($serverId);
+        $this->authorize('view', $server);
+
+        $this->selectedServerId = $server->id;
+        $this->selectedServer = $server;
+
+        $firstAccount = $server->accounts()->first();
+        $this->sftpDiagnosticUsername = $firstAccount ? $firstAccount->linux_username : 'admin263';
+
+        $this->sftpDiagnosticResult = null;
+        $this->sftpDiagnosticError = null;
+        $this->showSftpDiagnosticModal = true;
+    }
+
+    public function closeSftpDiagnosticModal(): void
+    {
+        $this->showSftpDiagnosticModal = false;
+        $this->selectedServerId = null;
+        $this->selectedServer = null;
+        $this->sftpDiagnosticResult = null;
+        $this->sftpDiagnosticError = null;
+        $this->sftpDiagnosticUsername = '';
+    }
+
+    public function runSftpDiagnostic(AgentClient $client): void
+    {
+        if (! $this->selectedServerId) {
+            return;
+        }
+
+        $server = Server::findOrFail($this->selectedServerId);
+        $this->authorize('view', $server);
+
+        $this->validate([
+            'sftpDiagnosticUsername' => ['required', 'string', 'regex:/^[a-z][a-z0-9_.-]{0,31}$/'],
+        ]);
+
+        $this->sftpDiagnosticResult = null;
+        $this->sftpDiagnosticError = null;
+
+        try {
+            $res = $client->execute(
+                server: $server,
+                action: 'sshd.effective',
+                payload: [
+                    'username' => trim($this->sftpDiagnosticUsername),
+                ],
+                dryRun: false
+            );
+
+            if ($res['success'] ?? false) {
+                $this->sftpDiagnosticResult = $res['data'] ?? [];
+            } else {
+                $this->sftpDiagnosticError = $res['error'] ?? 'Failed to evaluate sshd settings.';
+            }
+        } catch (\Throwable $e) {
+            $this->sftpDiagnosticError = 'Diagnostic execution failed: ' . $e->getMessage();
+        }
     }
 
     public function render(): View

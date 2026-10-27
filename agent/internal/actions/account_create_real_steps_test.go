@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,6 +29,17 @@ func (f *fakeCommandExecutor) Run(_ context.Context, name string, args ...string
 		return err
 	}
 	return nil
+}
+
+func (f *fakeCommandExecutor) RunStdin(_ context.Context, stdin io.Reader, name string, args ...string) ([]byte, error) {
+	f.commands = append(f.commands, f.key(name, args...))
+	if result, ok := f.combinedResult[f.key(name, args...)]; ok {
+		return result.out, result.err
+	}
+	if err, ok := f.runErrors[f.key(name, args...)]; ok {
+		return nil, err
+	}
+	return []byte{}, nil
 }
 
 func (f *fakeCommandExecutor) CombinedOutput(_ context.Context, name string, args ...string) ([]byte, error) {
