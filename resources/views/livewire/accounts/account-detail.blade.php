@@ -76,6 +76,9 @@
         <a href="{{ route('accounts.ftp', $account) }}" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-card hover:bg-shell text-main border border-border transition shadow-xs">
             🔌 FTP / SFTP Accounts
         </a>
+        <a href="{{ route('accounts.online_sftp', $account) }}" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-card hover:bg-shell text-main border border-border transition shadow-xs">
+            ⚡ Online SFTP
+        </a>
         <a href="{{ route('accounts.ssh', $account) }}" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-card hover:bg-shell text-main border border-border transition shadow-xs">
             🔑 SSH Keys
         </a>

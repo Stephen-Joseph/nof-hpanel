@@ -125,6 +125,10 @@ Route::middleware('auth')->group(function () {
         return view('files.index', ['account' => $account]);
     })->middleware('can:view,account')->name('accounts.files');
 
+    Route::get('/accounts/{account}/online-sftp', function (Account $account) {
+        return view('files.online-sftp', ['account' => $account]);
+    })->middleware(['can:view,account', 'throttle:online_sftp'])->name('accounts.online_sftp');
+
     Route::get('/accounts/{account}/ftp', function (Account $account) {
         return view('access.ftp', ['account' => $account]);
     })->middleware('can:view,account')->name('accounts.ftp');

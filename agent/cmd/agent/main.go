@@ -118,6 +118,21 @@ func main() {
 	registry.Register(actions.NewFileArchiveAction())
 	registry.Register(actions.NewFileExtractAction())
 
+	// Online SFTP typed actions
+	registry.Register(actions.NewFsListAction())
+	registry.Register(actions.NewFsStatAction())
+	registry.Register(actions.NewFsMkdirAction())
+	registry.Register(actions.NewFsCreateFileAction())
+	registry.Register(actions.NewFsRenameAction())
+	registry.Register(actions.NewFsMoveAction())
+	registry.Register(actions.NewFsCopyAction())
+	registry.Register(actions.NewFsDeleteAction())
+	registry.Register(actions.NewFsReadTextAction())
+	registry.Register(actions.NewFsWriteTextAction())
+	registry.Register(actions.NewFsUploadBeginAction())
+	registry.Register(actions.NewFsUploadChunkAction())
+	registry.Register(actions.NewFsUploadCommitAction())
+
 	registry.Register(actions.NewSshKeyAddAction())
 	registry.Register(actions.NewSshKeyRemoveAction())
 	registry.Register(actions.NewSftpAccountCreateAction())

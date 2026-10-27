@@ -73,6 +73,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Online SFTP Configuration
+    |--------------------------------------------------------------------------
+    */
+    'online_sftp' => [
+        'session_timeout_minutes' => (int) env('HPANEL_ONLINE_SFTP_TIMEOUT_MINUTES', 30),
+        'owner_pin' => env('HPANEL_ONLINE_SFTP_PIN', '123456'),
+        'rate_limit_per_minute' => (int) env('HPANEL_ONLINE_SFTP_RATE_LIMIT', 120),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Rate Limiting Policies
     |--------------------------------------------------------------------------
     */

@@ -66,6 +66,39 @@ Configured in `config/hpanel.php`:
 
 ---
 
+## Online SFTP ("Browser-based SFTP Client")
+
+### 1. Architecture Decision: Option B
+We chose **Option B (Panel-side file browsing through typed agent file actions with an SFTP-like UI)**:
+- **Zero New Attack Surface**: Avoids opening extra external or loopback WebSocket ports or running dynamic SSH proxy daemons.
+- **Unified Security Model**: Fully leverages the existing mTLS + HMAC-SHA256 request signing and per-account Linux user isolation.
+- **Desktop SFTP UX**: Two-pane interface with folder tree rooted at `/home/<user>`, breadcrumb navigation, real-time file filtering, inline text editor (< 1 MB), atomic file saves, chunked transfers, and quota monitoring.
+
+### 2. Typed Agent Actions (`fs.*`)
+Registered in `/agent/internal/actions/fs_actions.go`:
+- `fs.list(path)`: Lists directory entries (name, type, size, mode, mtime, owner). Symlinks are reported as `type: "symlink"` without following them outside `/home/<user>`.
+- `fs.stat(path)`: Returns detailed entry metadata and link targets.
+- `fs.mkdir(path)`: Creates directory with mode `0755` and chowns to `<user>:<user>`.
+- `fs.create_file(path)`: Creates empty file with mode `0644` and chowns to `<user>:<user>`.
+- `fs.rename(source, target)`: Renames file or directory within home; refuses home root.
+- `fs.move(source, target)`: Moves file or directory into destination directory within home; refuses home root.
+- `fs.copy(source, target)`: Recursively copies directories or files with a 100 MB safety limit; chowns all created objects to `<user>:<user>` and rejects escaping symlinks.
+- `fs.delete(path)`: Recursively removes files/directories; strictly refuses to delete the account home root (`/home/<user>`). For symlinks, removes only the symlink node without touching the target.
+- `fs.read_text(path)`: Reads text file contents up to 1 MB; strictly checks for NUL bytes (`\0`) and rejects binary files.
+- `fs.write_text(path, content)`: Atomically writes text using a same-directory temporary file (`.tmp-*`), syncs, chmods `0644`, chowns to `<user>:<user>`, and renames.
+- `fs.upload_begin(destination_dir, filename, total_size, quota_remaining)`: Validates filename, checks quota remaining, and allocates an upload session with temporary staging in the destination folder.
+- `fs.upload_chunk(session_id, chunk_index, content_base64)`: Validates session and appends base64-decoded chunks (max 4 MB per chunk).
+- `fs.upload_commit(session_id)`: Atomically renames temporary file to target filename, sets mode `0644`, and chowns to `<user>:<user>`.
+
+### 3. Panel Security & Session Controls
+- **Authorization**: Governed by `AccountPolicy@view` and `AccountPolicy@manageFiles` (owner, reseller subtree, or admin only).
+- **Session Freshness / PIN**: The Online SFTP interface requires fresh authentication (within 30 minutes) or prompts for the account owner PIN (configured via `HPANEL_ONLINE_SFTP_PIN` in `config/hpanel.php`) or user password.
+- **Audit Logging**: Every mutating action creates an entry in `audit_logs` recording action, account, path, size, and client IP without logging file contents, passwords, or tokens.
+- **Rate Limiting**: Enforces a strict 120 requests/minute limit per user via Laravel's rate limiter (`throttle:online_sftp`), returning HTTP 429 when exceeded.
+- **Filename Sanitization**: Rejects all control characters, null bytes (`\0`), path separators (`/`, `\`), and relative traversal (`..`).
+
+---
+
 ## Authorization & Auditing
 - Managed through Laravel Policy (`AccountPolicy::update`).
 - Customers can only manage their own account's files.

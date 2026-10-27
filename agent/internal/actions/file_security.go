@@ -11,17 +11,88 @@ import (
 )
 
 // ResolveSafePath strictly verifies that the given path is contained inside /home/<username>/.
-// It guards against path traversal (e.g. "../"), null bytes, and symlink escapes.
+// It guards against path traversal (e.g. "../"), null bytes, URL encoded traversal (%2e%2e), and symlink escapes.
 func ResolveSafePath(username, requestedPath string) (string, error) {
+	return ResolveSafePathWithBase("/home", username, requestedPath)
+}
+
+// ResolveSafePathNoFollow verifies that the path resides inside /home/<username>/ without following
+// the final path component if it is a symlink.
+func ResolveSafePathNoFollow(username, requestedPath string) (string, error) {
+	return ResolveSafePathNoFollowWithBase("/home", username, requestedPath)
+}
+
+// ResolveSafePathNoFollowWithBase validates that the path is inside baseHome/username, evaluating symlinks
+// for all parent directories, but NOT following the final path component if it is a symlink.
+func ResolveSafePathNoFollowWithBase(baseHome, username, requestedPath string) (string, error) {
 	if err := ValidateLinuxUsername(username); err != nil {
 		return "", err
+	}
+
+	lower := strings.ToLower(requestedPath)
+	if strings.Contains(lower, "%2e%2e") || strings.Contains(lower, "%2f") || strings.Contains(lower, "%00") {
+		return "", errors.New("illegal encoded path traversal sequence in file path")
 	}
 
 	if strings.Contains(requestedPath, "\x00") {
 		return "", errors.New("illegal null byte in file path")
 	}
 
-	homeDir := filepath.Clean(fmt.Sprintf("/home/%s", username))
+	if baseHome == "" {
+		baseHome = "/home"
+	}
+	baseHome = filepath.Clean(baseHome)
+	homeDir := filepath.Clean(filepath.Join(baseHome, username))
+
+	var candidatePath string
+	if filepath.IsAbs(requestedPath) {
+		candidatePath = filepath.Clean(requestedPath)
+	} else {
+		candidatePath = filepath.Clean(filepath.Join(homeDir, requestedPath))
+	}
+
+	// Lexical check: Candidate must start with home directory
+	if candidatePath != homeDir && !strings.HasPrefix(candidatePath, homeDir+string(filepath.Separator)) {
+		return "", fmt.Errorf("path '%s' traverses outside home directory '%s'", requestedPath, homeDir)
+	}
+
+	if candidatePath == homeDir {
+		return candidatePath, nil
+	}
+
+	parentDir := filepath.Dir(candidatePath)
+	realParent, parentErr := filepath.EvalSymlinks(parentDir)
+	if parentErr == nil {
+		realParent = filepath.Clean(realParent)
+		if realParent != homeDir && !strings.HasPrefix(realParent, homeDir+string(filepath.Separator)) {
+			return "", fmt.Errorf("parent directory symlink '%s' escapes home directory '%s'", realParent, homeDir)
+		}
+		return filepath.Join(realParent, filepath.Base(candidatePath)), nil
+	}
+
+	return candidatePath, nil
+}
+
+// ResolveSafePathWithBase verifies that the given path is contained inside <baseHome>/<username>/.
+func ResolveSafePathWithBase(baseHome, username, requestedPath string) (string, error) {
+	if err := ValidateLinuxUsername(username); err != nil {
+		return "", err
+	}
+
+	lower := strings.ToLower(requestedPath)
+	if strings.Contains(lower, "%2e%2e") || strings.Contains(lower, "%2f") || strings.Contains(lower, "%00") {
+		return "", errors.New("illegal encoded path traversal sequence in file path")
+	}
+
+	if strings.Contains(requestedPath, "\x00") {
+		return "", errors.New("illegal null byte in file path")
+	}
+
+	if baseHome == "" {
+		baseHome = "/home"
+	}
+	baseHome = filepath.Clean(baseHome)
+	homeDir := filepath.Clean(filepath.Join(baseHome, username))
 
 	var candidatePath string
 	if filepath.IsAbs(requestedPath) {
