@@ -18,6 +18,7 @@ type VhostRemoveAction struct {
 	executor          commandExecutor
 	vhostAvailableDir string
 	vhostEnabledDir   string
+	hpanelCustomDir   string
 	isLinux           bool
 }
 
@@ -26,15 +27,21 @@ func NewVhostRemoveAction() *VhostRemoveAction {
 		executor:          osCommandExecutor{},
 		vhostAvailableDir: "/etc/nginx/sites-available",
 		vhostEnabledDir:   "/etc/nginx/sites-enabled",
+		hpanelCustomDir:   "/etc/nginx/hpanel.d",
 		isLinux:           runtime.GOOS == "linux",
 	}
 }
 
-func NewVhostRemoveActionForTest(executor commandExecutor, vhostAvailableDir, vhostEnabledDir string) *VhostRemoveAction {
+func NewVhostRemoveActionForTest(executor commandExecutor, vhostAvailableDir, vhostEnabledDir string, hpanelCustomDir ...string) *VhostRemoveAction {
+	customDir := filepath.Join(filepath.Dir(vhostAvailableDir), "hpanel.d")
+	if len(hpanelCustomDir) > 0 && hpanelCustomDir[0] != "" {
+		customDir = hpanelCustomDir[0]
+	}
 	return &VhostRemoveAction{
 		executor:          executor,
 		vhostAvailableDir: vhostAvailableDir,
 		vhostEnabledDir:   vhostEnabledDir,
+		hpanelCustomDir:   customDir,
 		isLinux:           true,
 	}
 }
@@ -81,6 +88,12 @@ func (a *VhostRemoveAction) Execute(ctx context.Context, payload []byte, dryRun 
 	if a.isLinux {
 		_ = os.Remove(enabledPath)
 		_ = os.Remove(availPath)
+
+		customDir := a.hpanelCustomDir
+		if customDir == "" {
+			customDir = "/etc/nginx/hpanel.d"
+		}
+		_ = os.Remove(filepath.Join(customDir, fmt.Sprintf("%s.custom.conf", p.Domain)))
 
 		if _, err := a.executor.LookPath("nginx"); err == nil {
 			_ = a.executor.Run(ctx, "nginx", "-t")

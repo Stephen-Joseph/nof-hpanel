@@ -72,6 +72,10 @@ Route::middleware('auth')->group(function () {
             return view('admin.usage.index');
         })->middleware('can:create,'.Account::class)->name('admin.usage.index');
 
+        Route::get('/admin/web-server', App\Livewire\Admin\WebServerConfigManager::class)
+            ->middleware('can:viewAny,'.Server::class)
+            ->name('admin.web-server.index');
+
         // Servers (Admin Only)
         Route::get('/servers', function () {
             return view('servers.index');
@@ -206,6 +210,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/domains/{domain}/php', function (Domain $domain) {
         return view('domains.php', ['domain' => $domain]);
     })->middleware('can:view,domain')->name('domains.php');
+
+    Route::get('/domains/{domain}/web-server', App\Livewire\Domains\WebServerSettings::class)
+        ->middleware('can:update,domain')
+        ->name('domains.web-server');
 
     // API Integration
     Route::prefix('api-integration')->name('api.integration.')->middleware('verified')->group(function () {

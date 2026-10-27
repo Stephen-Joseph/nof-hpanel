@@ -37,6 +37,7 @@ type VhostTemplateData struct {
 	WwwRedirectBlock   string
 	RedirectsBlock     string
 	ProtectedDirsBlock string
+	HpanelCustomInclude string
 }
 
 const nginxVhostTemplate = `# HPanel Virtual Host Configuration
@@ -219,6 +220,9 @@ server {
         deny all;
     }
 {{end}}
+
+    # Include custom configuration
+    include {{if .HpanelCustomInclude}}{{.HpanelCustomInclude}}{{else}}/etc/nginx/hpanel.d/{{.Domain}}.custom.conf{{end}};
 }
 `
 

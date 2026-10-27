@@ -32,10 +32,45 @@ All agent executions invoke external commands strictly with argument arrays (e.g
 | `vhost.write` | `username`, `domain`, `document_root`, `app_profile`, `php_version`, `force_https`, `www_redirect`, `redirects[]` | Renders template, tests config, atomically moves to `sites-available`, creates symlink, reloads Nginx. |
 | `vhost.remove` | `username`, `domain` | Unlinks from `sites-enabled`, removes `/etc/nginx/sites-available/<domain>.conf`, reloads Nginx. |
 | `vhost.reload` | _None_ | Validates `nginx -t` and reloads `systemctl reload nginx`. |
+| `nginx.config.list` | _None_ | Lists virtual hosts in `sites-available` and `sites-enabled` with enabled state, owner, size, and mtime. |
+| `nginx.config.read` | `name` | Reads file content up to 256 KB. Access to `nginx.conf` and path traversal are rejected. |
+| `nginx.config.write` | `name`, `content`, `admin_confirmed` | Backs up file, writes atomically to temp file, validates with `nginx -t`. Rolls back on failure, reloads on success. Keeps last 20 backups. |
+| `nginx.config.enable` | `name` | Creates symlink in `sites-enabled/`, validates with `nginx -t`, rolls back on failure, reloads on success. |
+| `nginx.config.disable` | `name` | Removes symlink in `sites-enabled/`, validates with `nginx -t`, rolls back on failure, reloads on success. Typed confirmation for panel vhost. |
+| `nginx.config.backups` | `name` | Lists up to 20 timestamped revision backups stored in `/var/lib/panel-agent/config-backups/`. |
+| `nginx.config.restore` | `name`, `backup_id` | Backs up current file, restores selected backup, validates with `nginx -t`, rolls back on failure, reloads on success. |
+| `nginx.config.test` | _None_ | Read-only syntax check (`nginx -t`) returning console output and validation status. |
+| `nginx.custom.read` | `domain` | Reads `/etc/nginx/hpanel.d/<domain>.custom.conf`. |
+| `nginx.custom.write` | `domain`, `settings` | Validates settings against injection, renders custom include, backs up, verifies via `nginx -t`, rolls back on failure, reloads on success. |
 
 ---
 
-## 4. Atomic Staging, Linking & Rollback Strategy
+## 4. Web Server Config Manager (Admin Full Edit & Customer Structured Edit)
+
+### 4.1 Admin Full Configuration Management (`/admin/web-server`)
+Administrators have access to full virtual host file editing across the node:
+- **File Browser**: Lists virtual hosts across `sites-available` and `sites-enabled` with enabled chips, owner account, file size, and last modified date.
+- **Monospace Code Editor**: In-browser editor with `nginx -t` syntax testing on save.
+- **Panel Vhost Safety Guard**: Edits to the panel's own virtual host (`PANEL_DOMAIN`) require an explicit warning confirmation modal. Disabling the panel's own virtual host requires a typed confirmation prompt matching the exact domain name to prevent accidental lockout.
+- **Automatic Syntax Rollback**: Every write or enable/disable operation runs `nginx -t`. If syntax validation fails, the file is automatically rolled back to its previous state and the exact syntax error is returned to the user without reloading Nginx.
+- **Revision History & Restore**: Every save automatically copies the previous configuration to `/var/lib/panel-agent/config-backups/<name>.<timestamp>`. The last 20 revisions are retained and can be restored with a single click.
+
+### 4.2 Customer Structured Configuration (`/domains/{domain}/web-server`)
+Customers, resellers, and administrators can customize domain directives without writing raw Nginx syntax:
+- **Directives & Execution**:
+  - Max upload body size: 1 MB to 128 MB (`client_max_body_size`).
+  - Static asset cache lifetime: None, 1 day, 7 days, 30 days (`expires` with `Cache-Control: "public, no-transform"`).
+  - Clean URLs: toggle on/off (uses profile `.php` or front-controller fallback).
+  - Force HTTPS: toggle on/off (redirects non-TLS requests to HTTPS).
+  - Default index files: allow-list selection of `index.php`, `index.html`, `index.htm`.
+- **Custom Error Pages**: Map 404 and 403 errors to custom files inside `public_html`.
+- **Custom URL Redirects**: Up to 20 redirects with 301/302 status codes, strict redirect loop detection, and path validation.
+- **Generated Custom Include**: Directives are compiled into `/etc/nginx/hpanel.d/<domain>.custom.conf`, which is included directly inside the domain's virtual host block.
+- **Audit Logging**: All custom writes and config updates are recorded in `audit_logs` without storing raw configuration contents.
+
+---
+
+## 5. Atomic Staging, Linking & Rollback Strategy
 
 To ensure zero downtime and prevent misconfigured virtual hosts from breaking running services:
 1. **Default Server Catch-All (`00-default.conf`)**:

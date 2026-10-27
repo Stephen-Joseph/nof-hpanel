@@ -133,6 +133,9 @@
                         <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.php', $d) }}'">
                             PHP
                         </x-ui.button>
+                        <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.web-server', $d) }}'" title="Web Server / Nginx Configuration">
+                            Nginx
+                        </x-ui.button>
                         <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.dns', $d) }}'">
                             DNS
                         </x-ui.button>

@@ -95,6 +95,18 @@ func main() {
 	registry.Register(actions.NewVhostRemoveAction())
 	registry.Register(actions.NewVhostReloadAction())
 
+	// Nginx config manager actions
+	registry.Register(actions.NewNginxConfigListAction())
+	registry.Register(actions.NewNginxConfigReadAction())
+	registry.Register(actions.NewNginxConfigWriteAction())
+	registry.Register(actions.NewNginxConfigEnableAction())
+	registry.Register(actions.NewNginxConfigDisableAction())
+	registry.Register(actions.NewNginxConfigRestoreAction())
+	registry.Register(actions.NewNginxConfigBackupsAction())
+	registry.Register(actions.NewNginxConfigTestAction())
+	registry.Register(actions.NewNginxCustomReadAction())
+	registry.Register(actions.NewNginxCustomWriteAction())
+
 	registry.Register(actions.NewSslIssueAction())
 	registry.Register(actions.NewSslRenewAction())
 	registry.Register(actions.NewSslRevokeAction())

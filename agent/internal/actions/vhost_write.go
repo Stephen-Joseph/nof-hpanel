@@ -33,6 +33,7 @@ type VhostWriteAction struct {
 	executor          commandExecutor
 	vhostAvailableDir string
 	vhostEnabledDir   string
+	hpanelCustomDir   string
 	isLinux           bool
 }
 
@@ -41,15 +42,21 @@ func NewVhostWriteAction() *VhostWriteAction {
 		executor:          osCommandExecutor{},
 		vhostAvailableDir: "/etc/nginx/sites-available",
 		vhostEnabledDir:   "/etc/nginx/sites-enabled",
+		hpanelCustomDir:   "/etc/nginx/hpanel.d",
 		isLinux:           runtime.GOOS == "linux",
 	}
 }
 
-func NewVhostWriteActionForTest(executor commandExecutor, vhostAvailableDir, vhostEnabledDir string) *VhostWriteAction {
+func NewVhostWriteActionForTest(executor commandExecutor, vhostAvailableDir, vhostEnabledDir string, hpanelCustomDir ...string) *VhostWriteAction {
+	customDir := filepath.Join(filepath.Dir(vhostAvailableDir), "hpanel.d")
+	if len(hpanelCustomDir) > 0 && hpanelCustomDir[0] != "" {
+		customDir = hpanelCustomDir[0]
+	}
 	return &VhostWriteAction{
 		executor:          executor,
 		vhostAvailableDir: vhostAvailableDir,
 		vhostEnabledDir:   vhostEnabledDir,
+		hpanelCustomDir:   customDir,
 		isLinux:           true,
 	}
 }
@@ -178,21 +185,34 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 	}
 	serverNames := strings.Join(serverNamesList, " ")
 
+	customDir := a.hpanelCustomDir
+	if customDir == "" {
+		customDir = "/etc/nginx/hpanel.d"
+	}
+	customConfPath := filepath.Join(customDir, fmt.Sprintf("%s.custom.conf", p.Domain))
+	if !dryRun {
+		_ = os.MkdirAll(customDir, 0755)
+		if _, err := os.Stat(customConfPath); os.IsNotExist(err) {
+			_ = os.WriteFile(customConfPath, []byte(fmt.Sprintf("# Custom Nginx configuration for %s\n", p.Domain)), 0644)
+		}
+	}
+
 	vhostData := VhostTemplateData{
-		Username:      p.Username,
-		Domain:        p.Domain,
-		ServerNames:   serverNames,
-		DocumentRoot:  p.DocumentRoot,
-		AppProfile:    p.AppProfile,
-		PHPVersion:    p.PHPVersion,
-		ForceHTTPS:    p.ForceHTTPS,
-		SSLEnabled:    p.SSLEnabled,
-		SSLCertPath:   p.SSLCertPath,
-		SSLKeyPath:    p.SSLKeyPath,
-		HstsEnabled:   p.HstsEnabled,
-		WwwRedirect:   p.WwwRedirect,
-		Redirects:     p.Redirects,
-		ProtectedDirs: p.ProtectedDirs,
+		Username:            p.Username,
+		Domain:              p.Domain,
+		ServerNames:         serverNames,
+		DocumentRoot:        p.DocumentRoot,
+		AppProfile:          p.AppProfile,
+		PHPVersion:          p.PHPVersion,
+		ForceHTTPS:          p.ForceHTTPS,
+		SSLEnabled:          p.SSLEnabled,
+		SSLCertPath:         p.SSLCertPath,
+		SSLKeyPath:          p.SSLKeyPath,
+		HstsEnabled:         p.HstsEnabled,
+		WwwRedirect:         p.WwwRedirect,
+		Redirects:           p.Redirects,
+		ProtectedDirs:       p.ProtectedDirs,
+		HpanelCustomInclude: customConfPath,
 	}
 
 	configContent, err := RenderVhostConfig(vhostData)
