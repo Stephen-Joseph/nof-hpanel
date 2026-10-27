@@ -88,6 +88,11 @@ class ExecuteGitDeployJob implements ShouldQueue
                     'last_commit_hash' => $data['commit_hash'] ?? null,
                 ]);
 
+                $this->deployment->loadMissing('domain');
+                if ($this->deployment->domain) {
+                    \App\Jobs\SyncHtaccessRulesJob::dispatch($this->deployment->domain);
+                }
+
                 $agentJob->markCompleted($data);
             } else {
                 $release->update([

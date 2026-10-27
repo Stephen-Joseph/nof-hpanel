@@ -38,8 +38,15 @@ Artisan::command('domains:regenerate-vhost {domain=copyplusdtp.in} {profile=php-
     return 0;
 })->purpose('Regenerate Nginx virtual host for a domain with a specified application profile');
 
+Artisan::command('htaccess:sync', function () {
+    $this->info('Scanning and syncing .htaccess rules across active domains...');
+    dispatch_sync(new \App\Jobs\SyncAllHtaccessJob);
+    $this->info('.htaccess rules synced.');
+})->purpose('Scan and convert .htaccess rules into Nginx configurations');
+
 Schedule::command('ssl:renew-expiring')->daily();
 Schedule::command('domains:verify-pending')->everyFifteenMinutes();
+Schedule::command('htaccess:sync')->everyFifteenMinutes();
 Schedule::command('usage:collect')->everyFifteenMinutes();
 Schedule::command('bandwidth:reset')->monthlyOn(1, '00:00');
 Schedule::command('backups:run-scheduled')->everyMinute();

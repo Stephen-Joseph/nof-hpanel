@@ -108,3 +108,39 @@ Customers can select the application profile for any domain in **Domains** (via 
 2. Ensure the A record points to the server IP displayed in the DNS Helper view.
 3. If using Cloudflare or a reverse-proxy CDN, ensure SSL mode is set to "Full" or "Full (Strict)" to prevent redirect loops.
 
+---
+
+## 7. .htaccess Compatibility Layer
+
+### 7.1 Purpose & Execution Model
+Nginx does not natively read `.htaccess` files. HPanel solves this transparently for customers migrating from Apache or cPanel:
+1. **Parser Location**: The parser and converter run in the Go agent (`htaccess.sync`). This allows direct atomic filesystem operations on `/home/<user>/public_html/.htaccess`, validation of the generated `/etc/nginx/hpanel.d/<domain>.htaccess.conf` with `nginx -t`, and automatic rollback in a single atomic transaction.
+2. **Virtual Host Include**: Virtual hosts include the configuration via optional glob inclusion: `include /etc/nginx/hpanel.d/<domain>.htaccess.con[f];`. If the file exists, it is loaded; if deleted or absent, Nginx starts cleanly without errors.
+3. **Hardened Blocking**: The `.htaccess` file itself is never served directly to the web; it remains blocked by Nginx's hidden dotfile location block (`location ~ /\.(?!well-known).* { deny all; }`).
+4. **No Raw Directives Passed**: The converter parses lines into typed directive models and renders structured Nginx blocks. Unsupported or malicious directives are never passed to Nginx verbatim.
+
+### 7.2 Supported Directives
+- `RewriteEngine`, `RewriteCond`, `RewriteRule`: Supports standard front-controller patterns (`try_files`), HTTPS enforcement, host canonicalization, and regular rewrites with flags `L`, `R=301`, `R=302`, `F`, `G`, `NC`, `QSA`, and `NE`. Includes circular loop protection.
+- `Redirect`, `RedirectMatch`: Permanent (301), temporary (302), see other (303), temporary redirect (307), permanent redirect (308), and gone (410).
+- `ErrorDocument`: Custom error paths or external URLs for status codes 400 through 504.
+- `DirectoryIndex`: Allow-listed index file lists.
+- `Header`: Allow-listed security and cache headers (`X-Frame-Options`, `Content-Security-Policy`, `Cache-Control`, etc.). CRLF injections and `Set-Cookie` are explicitly rejected.
+- `ExpiresActive`, `ExpiresByType`: MIME-type cache expiration times converted to Nginx `expires` directives.
+- `Options`: `-Indexes` (`autoindex off;`) and `+Indexes` (`autoindex on;`).
+- `Require`, `Deny`: Access control for `Require all granted/denied` and CIDR/IP allow/deny rules.
+- `AuthType Basic`, `AuthName`, `AuthUserFile`: Basic HTTP authentication mapped to standard Nginx `auth_basic`.
+
+### 7.3 Unsupported Directive Reporting
+Unsupported directives are tracked with line numbers and explanatory guidance in the UI:
+- `php_value`, `php_flag`: Directs user to the panel's PHP Manager (`/domains/{domain}/php`).
+- `SetEnv`: Recommends `.env` or PHP Manager environment options.
+- `AddHandler`, `AddType`: Managed automatically by Nginx fastcgi wrappers.
+- `mod_security`, `Order`: Apache 2.2 access orders or legacy modules.
+
+### 7.4 Automatic Sync Lifecycle
+- **File Manager**: Saving, uploading, or deleting `.htaccess` triggers an instant background sync.
+- **Online SFTP**: Committing file changes, uploading, or removing `.htaccess` triggers background sync.
+- **Git Deploy**: Automated deployments trigger `SyncHtaccessRulesJob` upon successful branch checkout.
+- **Scheduled Reconciliation**: `php artisan htaccess:sync` runs every 15 minutes via the Laravel scheduler.
+
+

@@ -25,6 +25,37 @@ class DomainList extends Component
 
     public string $selectedProfile = 'php-generic';
 
+    public bool $showingHtaccessModal = false;
+
+    public ?int $viewingHtaccessDomainId = null;
+
+    public function openHtaccessModal(int $id): void
+    {
+        /** @var Domain $domain */
+        $domain = Domain::with(['account.server', 'account.user'])->findOrFail($id);
+        $this->authorize('view', $domain);
+
+        $this->viewingHtaccessDomainId = $id;
+        $this->showingHtaccessModal = true;
+    }
+
+    public function closeHtaccessModal(): void
+    {
+        $this->showingHtaccessModal = false;
+        $this->viewingHtaccessDomainId = null;
+    }
+
+    public function rescanHtaccess(int $id): void
+    {
+        /** @var Domain $domain */
+        $domain = Domain::with(['account.server', 'account.user'])->findOrFail($id);
+        $this->authorize('update', $domain);
+
+        dispatch_sync(new \App\Jobs\SyncHtaccessRulesJob($domain));
+
+        session()->flash('status', ".htaccess rules for '{$domain->domain}' rescanned and converted.");
+    }
+
     public function openProfileModal(int $id): void
     {
         /** @var Domain $domain */
@@ -123,10 +154,12 @@ class DomainList extends Component
             ->get();
 
         $editingDomain = $this->editingDomainId ? Domain::find($this->editingDomainId) : null;
+        $viewingHtaccessDomain = $this->viewingHtaccessDomainId ? Domain::with(['account.server'])->find($this->viewingHtaccessDomainId) : null;
 
         return view('livewire.domains.domain-list', [
             'domains' => $domains,
             'editingDomain' => $editingDomain,
+            'viewingHtaccessDomain' => $viewingHtaccessDomain,
         ]);
     }
 }

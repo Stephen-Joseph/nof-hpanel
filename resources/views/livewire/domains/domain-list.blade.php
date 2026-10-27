@@ -136,6 +136,9 @@
                         <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.web-server', $d) }}'" title="Web Server / Nginx Configuration">
                             Nginx
                         </x-ui.button>
+                        <x-ui.button variant="outline" size="xs" wire:click="openHtaccessModal({{ $d->id }})" title="Apache Rules (.htaccess) Compatibility">
+                            .htaccess
+                        </x-ui.button>
                         <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.dns', $d) }}'">
                             DNS
                         </x-ui.button>
@@ -245,6 +248,155 @@
                             </x-ui.button>
                         </div>
                     </form>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    <!-- Apache Rules (.htaccess) Modal -->
+    @if ($showingHtaccessModal && $viewingHtaccessDomain)
+        @php
+            $report = $viewingHtaccessDomain->htaccess_report ?? [];
+            $rules = $report['rules'] ?? [];
+            $convertedCount = $report['converted_count'] ?? 0;
+            $unsupportedCount = $report['unsupported_count'] ?? 0;
+            $warningCount = $report['warning_count'] ?? 0;
+            $exists = $report['exists'] ?? false;
+        @endphp
+        <div class="fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true">
+            <div class="flex items-center justify-center min-h-screen px-4 py-6">
+                <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-xs transition-opacity" wire:click="closeHtaccessModal"></div>
+
+                <div class="relative bg-[var(--bg-card)] border border-[var(--border)] rounded-[24px] overflow-hidden shadow-2xl max-w-3xl w-full z-10 flex flex-col max-h-[85vh]">
+                    <!-- Header -->
+                    <div class="px-6 py-4.5 border-b border-[var(--border)] flex justify-between items-center bg-[var(--bg-shell)]/50">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h3 class="text-base font-bold text-[var(--text)]">Apache Rules (.htaccess)</h3>
+                                <span class="text-xs font-mono text-[var(--text-muted)]">{{ $viewingHtaccessDomain->domain }}</span>
+                            </div>
+                            <p class="text-xs text-[var(--text-muted)] mt-0.5">
+                                This server runs Nginx. Rules are converted automatically; unsupported rules are listed below.
+                            </p>
+                        </div>
+                        <x-ui.icon-button label="Close" variant="ghost" size="sm" wire:click="closeHtaccessModal">
+                            &times;
+                        </x-ui.icon-button>
+                    </div>
+
+                    <!-- Body -->
+                    <div class="p-6 space-y-4 overflow-y-auto flex-1">
+                        <!-- Summary Chips -->
+                        <div class="flex items-center gap-3">
+                            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> {{ $convertedCount }} Converted
+                            </span>
+                            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                                <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> {{ $unsupportedCount }} Unsupported
+                            </span>
+                            @if ($warningCount > 0)
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> {{ $warningCount }} Warnings
+                                </span>
+                            @endif
+                            <div class="ml-auto text-xs text-[var(--text-muted)]">
+                                @if(!empty($report['synced_at']))
+                                    Last synced {{ \Illuminate\Support\Carbon::parse($report['synced_at'])->diffForHumans() }}
+                                @endif
+                            </div>
+                        </div>
+
+                        <!-- Rules Table -->
+                        @if (empty($rules))
+                            <div class="py-8 text-center text-xs text-[var(--text-muted)] border border-dashed border-[var(--border)] rounded-2xl">
+                                @if ($exists)
+                                    No directives found in .htaccess file.
+                                @else
+                                    No .htaccess file found in this domain's document root. Upload or create one to automatically convert Apache rules.
+                                @endif
+                            </div>
+                        @else
+                            <div class="rounded-2xl border border-[var(--border)] overflow-hidden">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-[var(--bg-shell)]/70 text-[var(--text-muted)] uppercase tracking-wider text-[10px] font-semibold">
+                                        <tr>
+                                            <th class="px-4 py-2.5 w-14">Line</th>
+                                            <th class="px-4 py-2.5">Directive</th>
+                                            <th class="px-4 py-2.5 w-24">Status</th>
+                                            <th class="px-4 py-2.5">Message / Panel Link</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-[var(--border)]">
+                                        @foreach ($rules as $r)
+                                            <tr class="hover:bg-[var(--bg-shell)]/40 transition">
+                                                <td class="px-4 py-3 font-mono text-[var(--text-muted)]">
+                                                    {{ $r['line'] }}
+                                                </td>
+                                                <td class="px-4 py-3 font-mono text-slate-200 bg-slate-950/20 max-w-xs truncate" title="{{ $r['directive'] }}">
+                                                    {{ $r['directive'] }}
+                                                </td>
+                                                <td class="px-4 py-3 whitespace-nowrap">
+                                                    @if ($r['status'] === 'converted')
+                                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                            Converted
+                                                        </span>
+                                                    @elseif ($r['status'] === 'warning')
+                                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                                            Warning
+                                                        </span>
+                                                    @else
+                                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                                                            Unsupported
+                                                        </span>
+                                                    @endif
+                                                </td>
+                                                <td class="px-4 py-3 text-[var(--text)]">
+                                                    <div>{{ $r['message'] }}</div>
+                                                    @if (!empty($r['feature_link']))
+                                                        <div class="mt-1">
+                                                            @if ($r['feature_link'] === 'redirects')
+                                                                <a href="{{ route('domains.redirects', $viewingHtaccessDomain) }}" class="text-blue-500 hover:underline font-semibold text-[11px]">
+                                                                    Open Redirects &rarr;
+                                                                </a>
+                                                            @elseif ($r['feature_link'] === 'protected-dirs')
+                                                                <a href="{{ route('accounts.protected-dirs', $viewingHtaccessDomain->account) }}" class="text-blue-500 hover:underline font-semibold text-[11px]">
+                                                                    Open Protected Directories &rarr;
+                                                                </a>
+                                                            @elseif ($r['feature_link'] === 'php')
+                                                                <a href="{{ route('domains.php', $viewingHtaccessDomain) }}" class="text-blue-500 hover:underline font-semibold text-[11px]">
+                                                                    Open PHP Manager &rarr;
+                                                                </a>
+                                                            @elseif ($r['feature_link'] === 'web-server')
+                                                                <a href="{{ route('domains.web-server', $viewingHtaccessDomain) }}" class="text-blue-500 hover:underline font-semibold text-[11px]">
+                                                                    Open Web Server &rarr;
+                                                                </a>
+                                                            @endif
+                                                        </div>
+                                                    @endif
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        @endif
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="px-6 py-4 bg-[var(--bg-shell)]/60 border-t border-[var(--border)] flex justify-between items-center">
+                        <x-ui.button
+                            variant="secondary"
+                            size="sm"
+                            wire:click="rescanHtaccess({{ $viewingHtaccessDomain->id }})"
+                            loading="rescanHtaccess"
+                        >
+                            Rescan &amp; Convert .htaccess
+                        </x-ui.button>
+
+                        <x-ui.button variant="outline" size="sm" wire:click="closeHtaccessModal">
+                            Close
+                        </x-ui.button>
+                    </div>
                 </div>
             </div>
         </div>

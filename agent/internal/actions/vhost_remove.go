@@ -94,6 +94,7 @@ func (a *VhostRemoveAction) Execute(ctx context.Context, payload []byte, dryRun 
 			customDir = "/etc/nginx/hpanel.d"
 		}
 		_ = os.Remove(filepath.Join(customDir, fmt.Sprintf("%s.custom.conf", p.Domain)))
+		_ = os.Remove(filepath.Join(customDir, fmt.Sprintf("%s.htaccess.conf", p.Domain)))
 
 		if _, err := a.executor.LookPath("nginx"); err == nil {
 			_ = a.executor.Run(ctx, "nginx", "-t")

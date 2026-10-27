@@ -543,6 +543,9 @@ class OnlineSftp extends Component
                 if ($response['success']) {
                     $this->logAudit('fs.delete', $target, 0);
                     $deletedCount++;
+                    if (str_ends_with($target, '.htaccess')) {
+                        $this->triggerHtaccessSync();
+                    }
                 }
             } catch (\Throwable $e) {
                 // Keep deleting remaining items
@@ -613,6 +616,9 @@ class OnlineSftp extends Component
                 session()->flash('status', "Saved '{$this->editingFileName}' successfully.");
                 $this->isEditing = false;
                 $this->loadDirectory($this->currentPath, $client);
+                if ($this->editingFileName === '.htaccess' || str_ends_with($this->editingFilePath, '.htaccess')) {
+                    $this->triggerHtaccessSync();
+                }
             } else {
                 session()->flash('error', 'Save failed: '.($response['error'] ?? 'Unknown error'));
             }
@@ -796,6 +802,7 @@ class OnlineSftp extends Component
         if ($successCount > 0) {
             session()->flash('status', "Uploaded {$successCount} file(s) successfully.");
             $this->loadDirectory($this->currentPath, $client);
+            $this->triggerHtaccessSync();
         }
 
         if (empty($this->uploadErrors)) {
@@ -940,6 +947,14 @@ class OnlineSftp extends Component
             ],
             'created_at' => now(),
         ]);
+    }
+
+    protected function triggerHtaccessSync(): void
+    {
+        $this->account->loadMissing('domains');
+        foreach ($this->account->domains as $domain) {
+            \App\Jobs\SyncHtaccessRulesJob::dispatch($domain);
+        }
     }
 
     public function render(): View

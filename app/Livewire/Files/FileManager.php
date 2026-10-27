@@ -174,6 +174,10 @@ class FileManager extends Component
                 $this->isEditing = false;
                 session()->flash('status', "File '{$this->editingFileName}' saved successfully.");
                 $this->loadDirectory($this->currentPath, $client);
+
+                if ($this->editingFileName === '.htaccess' || str_ends_with($this->editingFilePath, '.htaccess')) {
+                    $this->triggerHtaccessSync();
+                }
             } else {
                 session()->flash('error', $response['error'] ?? 'Failed saving file.');
             }
@@ -242,6 +246,10 @@ class FileManager extends Component
             if ($response['success']) {
                 session()->flash('status', 'Item deleted.');
                 $this->loadDirectory($this->currentPath, $client);
+
+                if (str_ends_with($path, '.htaccess') || basename($path) === '.htaccess') {
+                    $this->triggerHtaccessSync();
+                }
             } else {
                 session()->flash('error', $response['error'] ?? 'Delete failed.');
             }
@@ -463,6 +471,7 @@ class FileManager extends Component
         $this->uploads = [];
         session()->flash('status', "{$uploadedCount} file(s) uploaded successfully.");
         $this->loadDirectory($this->currentPath, $client);
+        $this->triggerHtaccessSync();
     }
 
     // --- Extract Actions ---
@@ -682,6 +691,14 @@ class FileManager extends Component
         }
 
         return $path;
+    }
+
+    protected function triggerHtaccessSync(): void
+    {
+        $this->account->loadMissing('domains');
+        foreach ($this->account->domains as $domain) {
+            \App\Jobs\SyncHtaccessRulesJob::dispatch($domain);
+        }
     }
 
     public function render(): View

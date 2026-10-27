@@ -106,6 +106,7 @@ func main() {
 	registry.Register(actions.NewNginxConfigTestAction())
 	registry.Register(actions.NewNginxCustomReadAction())
 	registry.Register(actions.NewNginxCustomWriteAction())
+	registry.Register(actions.NewHtaccessSyncAction())
 
 	registry.Register(actions.NewSslIssueAction())
 	registry.Register(actions.NewSslRenewAction())
