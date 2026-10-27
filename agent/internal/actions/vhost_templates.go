@@ -203,7 +203,7 @@ server {
 {{else}}
     # Profile: PHP Generic
     location / {
-        try_files $uri $uri/ $uri.php?$query_string;
+        try_files $uri $uri/ $uri.php$is_args$args;
     }
 
     location ~ \.php$ {

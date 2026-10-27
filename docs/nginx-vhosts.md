@@ -54,7 +54,7 @@ To ensure zero downtime and prevent misconfigured virtual hosts from breaking ru
 ## 5. Application Profiles
 
 Customers can select the application profile for any domain in **Domains** (via the inline Profile button or modal, or in the PHP Manager):
-- `php-generic`: Standard PHP web application with clean URLs and `.php` script fallback (`try_files $uri $uri/ $uri.php?$query_string;`), fastcgi buffering, and socket routing to `/run/php/php<version>-fpm-<username>.sock`.
+- `php-generic`: Standard PHP web application with clean URLs and `.php` script fallback (`try_files $uri $uri/ $uri.php$is_args$args;`), fastcgi buffering, and socket routing to `/run/php/php<version>-fpm-<username>.sock`.
 - `laravel`: Enforces document root `/public`, blocks `.env` and dotfile access, passes non-file requests to the front controller (`try_files $uri $uri/ /index.php?$query_string;`).
 - `wordpress`: Standard WordPress routing rules (`try_files $uri $uri/ /index.php?$args;`), XML-RPC hardening, blocks direct access to `wp-config.php` and uploaded PHP files in `wp-content/uploads/`.
 - `static-spa`: Single Page Application or static site with `try_files $uri $uri/ /index.html` fallback, cache-control headers, and gzip compression.

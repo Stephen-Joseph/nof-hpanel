@@ -30,7 +30,7 @@
                     <div>
                         <label class="block text-xs font-medium text-muted mb-1.5">Application Profile</label>
                         <x-ui.select wire:model="app_profile">
-                            <option value="php-generic">PHP Generic (try_files $uri $uri/ $uri.php?$query_string;)</option>
+                            <option value="php-generic">PHP Generic (try_files $uri $uri/ $uri.php$is_args$args;)</option>
                             <option value="laravel">Laravel Framework (try_files $uri $uri/ /index.php?$query_string;)</option>
                             <option value="wordpress">WordPress (try_files $uri $uri/ /index.php?$args;)</option>
                             <option value="static-spa">Static HTML / Single Page App (try_files $uri $uri/ /index.html;)</option>

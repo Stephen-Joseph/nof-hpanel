@@ -101,14 +101,20 @@
                         {{ $d->type->label() }}
                     </x-ui.chip>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-[var(--text-muted)]">
-                    <button type="button" wire:click="openProfileModal({{ $d->id }})" class="hover:text-blue-600 dark:hover:text-blue-400 font-semibold cursor-pointer text-left inline-flex items-center gap-1 group" title="Click to change application profile">
-                        <span class="group-hover:underline text-[var(--text)]">{{ $d->app_profile->label() }}</span>
-                        <svg class="w-3 h-3 text-[var(--text-muted)] group-hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
-                    </button>
-                    <span class="text-[var(--text-muted)]">(PHP {{ $d->php_version }})</span>
+                <td class="px-6 py-4 whitespace-nowrap text-xs">
+                    <div class="flex items-center gap-2">
+                        <select
+                            wire:change="changeAppProfile({{ $d->id }}, $event.target.value)"
+                            class="text-xs rounded-xl border border-[var(--border)] bg-[var(--bg-shell)] text-[var(--text)] px-2.5 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-sans cursor-pointer"
+                            title="Change Application Profile"
+                        >
+                            <option value="php-generic" {{ $d->app_profile->value === 'php-generic' ? 'selected' : '' }}>php-generic</option>
+                            <option value="laravel" {{ $d->app_profile->value === 'laravel' ? 'selected' : '' }}>laravel</option>
+                            <option value="wordpress" {{ $d->app_profile->value === 'wordpress' ? 'selected' : '' }}>wordpress</option>
+                            <option value="static-spa" {{ $d->app_profile->value === 'static-spa' ? 'selected' : '' }}>static-spa</option>
+                        </select>
+                        <span class="text-[var(--text-muted)] font-mono text-[11px]">(PHP {{ $d->php_version }})</span>
+                    </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-[var(--text-muted)] truncate max-w-xs">
                     {{ $d->document_root }}
@@ -184,7 +190,7 @@
                                 <div>
                                     <div class="text-sm font-semibold text-[var(--text)]">PHP Generic</div>
                                     <p class="text-xs text-[var(--text-muted)] mt-0.5">
-                                        Standard PHP website with clean URLs and .php script fallback (<code class="font-mono text-[11px]">try_files $uri $uri/ $uri.php?$query_string;</code>).
+                                        Standard PHP website with clean URLs and .php script fallback (<code class="font-mono text-[11px]">try_files $uri $uri/ $uri.php$is_args$args;</code>).
                                     </p>
                                 </div>
                             </label>

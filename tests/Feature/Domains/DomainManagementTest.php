@@ -332,3 +332,34 @@ test('domains regenerate-vhost command updates domain to php-generic and writes 
     $domain->refresh();
     expect($domain->app_profile)->toEqual(AppProfile::PHP_GENERIC);
 });
+
+test('customer can change application profile dropdown per domain in domain list', function (string $profile, AppProfile $expectedEnum) {
+    Queue::fake();
+
+    $this->domain1->update(['app_profile' => AppProfile::LARAVEL]);
+
+    Livewire::actingAs($this->customer1)
+        ->test(DomainList::class)
+        ->call('changeAppProfile', $this->domain1->id, $profile)
+        ->assertHasNoErrors()
+        ->assertSee("Application profile for '{$this->domain1->domain}' updated to");
+
+    $this->domain1->refresh();
+    expect($this->domain1->app_profile)->toEqual($expectedEnum);
+
+    Queue::assertPushed(WriteVhostJob::class, function ($job) {
+        return $job->domain->id === $this->domain1->id;
+    });
+})->with([
+    ['php-generic', AppProfile::PHP_GENERIC],
+    ['laravel', AppProfile::LARAVEL],
+    ['wordpress', AppProfile::WORDPRESS],
+    ['static-spa', AppProfile::STATIC_SPA],
+]);
+
+test('cross-tenant changeAppProfile is forbidden', function () {
+    Livewire::actingAs($this->customer1)
+        ->test(DomainList::class)
+        ->call('changeAppProfile', $this->domain2->id, 'php-generic')
+        ->assertForbidden();
+});

@@ -67,6 +67,25 @@ class DomainList extends Component
         session()->flash('status', "Application profile for '{$domain->domain}' updated to '{$newProfile->label()}' and virtual host regenerated.");
     }
 
+    public function changeAppProfile(int $id, string $profile): void
+    {
+        /** @var Domain $domain */
+        $domain = Domain::with(['account.server', 'account.package', 'certificate', 'redirects', 'protectedDirectories'])
+            ->findOrFail($id);
+        $this->authorize('update', $domain);
+
+        $validated = validator(['profile' => $profile], [
+            'profile' => ['required', Rule::in(['php-generic', 'laravel', 'wordpress', 'static-spa'])],
+        ])->validate();
+
+        $newProfile = AppProfile::from($validated['profile']);
+        $domain->update(['app_profile' => $newProfile]);
+
+        WriteVhostJob::dispatch($domain);
+
+        session()->flash('status', "Application profile for '{$domain->domain}' updated to '{$newProfile->label()}' and virtual host regenerated.");
+    }
+
     public function deleteDomain(int $id): void
     {
         /** @var Domain $domain */
