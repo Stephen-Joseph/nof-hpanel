@@ -264,3 +264,4 @@ test('admin disabling panel own vhost requires typed confirmation', function () 
         ->assertHasErrors(['typedConfirmDomain'])
         ->assertSet('showingDisableTypedModal', true);
 });
+
