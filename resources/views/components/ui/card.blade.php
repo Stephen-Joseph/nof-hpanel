@@ -42,7 +42,7 @@ $subtitleClasses = match($variant) {
 
 <div {{ $attributes->merge(['class' => "{$variantClasses} rounded-[20px] overflow-hidden transition-colors duration-150 relative"]) }}>
     @if ($title || $headerActions || isset($header))
-        <div class="px-6 py-4.5 border-b {{ $headerBorderClasses }} flex items-center justify-between gap-4">
+        <div class="px-4 sm:px-6 py-3.5 sm:py-4.5 border-b {{ $headerBorderClasses }} flex items-center justify-between gap-3 sm:gap-4">
             @if (isset($header))
                 {{ $header }}
             @else
@@ -57,19 +57,19 @@ $subtitleClasses = match($variant) {
             @endif
 
             @if ($headerActions || isset($actions))
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 shrink-0">
                     {{ $headerActions ?? $actions }}
                 </div>
             @endif
         </div>
     @endif
 
-    <div @class(['p-5 sm:p-6' => $padding])>
+    <div @class(['p-4 sm:p-6' => $padding])>
         {{ $slot }}
     </div>
 
     @if ($footer || isset($footerSlot))
-        <div class="px-6 py-3.5 border-t {{ $footerBorderClasses }} flex items-center justify-between">
+        <div class="px-4 sm:px-6 py-3 sm:py-3.5 border-t {{ $footerBorderClasses }} flex items-center justify-between">
             {{ $footer ?? $footerSlot }}
         </div>
     @endif

@@ -67,10 +67,10 @@ $maxWidthClass = match ($maxWidth) {
         x-transition:leave="ease-in duration-200"
         x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
         x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-        class="mb-6 bg-[var(--bg-card)] border border-[var(--border)] rounded-[24px] overflow-hidden shadow-2xl transform transition-all sm:w-full {{ $maxWidthClass }} z-10"
+        class="mb-6 bg-[var(--bg-card)] border border-[var(--border)] rounded-[20px] sm:rounded-[24px] overflow-hidden shadow-2xl transform transition-all w-full {{ $maxWidthClass }} z-10 mx-auto"
     >
         @if ($title || isset($header))
-            <div class="px-6 py-4.5 border-b border-[var(--border)] flex items-center justify-between">
+            <div class="px-4 sm:px-6 py-3.5 sm:py-4.5 border-b border-[var(--border)] flex items-center justify-between">
                 @if (isset($header))
                     {{ $header }}
                 @else
@@ -89,12 +89,12 @@ $maxWidthClass = match ($maxWidth) {
             </div>
         @endif
 
-        <div class="px-6 py-6">
+        <div class="px-4 sm:px-6 py-4 sm:py-6">
             {{ $slot }}
         </div>
 
         @if ($footer || isset($footerSlot))
-            <div class="px-6 py-4 bg-[var(--bg-shell)]/60 border-t border-[var(--border)] flex items-center justify-end gap-3">
+            <div class="px-4 sm:px-6 py-3 sm:py-4 bg-[var(--bg-shell)]/60 border-t border-[var(--border)] flex items-center justify-end gap-2 sm:gap-3">
                 {{ $footer ?? $footerSlot }}
             </div>
         @endif

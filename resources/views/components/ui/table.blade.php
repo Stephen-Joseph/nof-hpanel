@@ -12,7 +12,7 @@
                     @else
                         <tr>
                             @foreach ($headers as $header)
-                                <th scope="col" class="px-6 py-3.5">{{ $header }}</th>
+                                <th scope="col" class="px-4 sm:px-6 py-3 sm:py-3.5">{{ $header }}</th>
                             @endforeach
                         </tr>
                     @endif

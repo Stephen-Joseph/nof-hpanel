@@ -2,7 +2,7 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
     <title>{{ $title ?? config('app.name', 'HPanel') }}</title>
@@ -23,7 +23,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 </head>
-<body class="min-h-screen font-sans antialiased bg-[var(--bg-shell)] text-[var(--text)] transition-colors duration-200" x-data="{ sidebarOpen: false }">
+<body class="min-h-screen font-sans antialiased bg-[var(--bg-shell)] text-[var(--text)] transition-colors duration-200" x-data="{ sidebarOpen: false }" :class="{ 'overflow-hidden': sidebarOpen }">
 
     <!-- Mobile Off-Canvas Sidebar Drawer -->
     <div
@@ -55,20 +55,10 @@
                 x-transition:leave="transition ease-in-out duration-300 transform"
                 x-transition:leave-start="translate-x-0"
                 x-transition:leave-end="-translate-x-full"
-                class="relative mr-16 flex w-full max-w-xs flex-1"
+                class="relative mr-12 flex w-full max-w-xs flex-1 shadow-2xl"
             >
                 <div class="flex flex-col flex-1 bg-[var(--bg-shell)] border-r border-[var(--border)] overflow-y-auto">
-                    <div class="flex items-center justify-between px-6 pt-5 pb-2">
-                        <span class="text-sm font-bold text-[var(--text)]">Navigation</span>
-                        <button type="button" @click="sidebarOpen = false" class="w-8 h-8 rounded-full border border-[var(--border)] flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text)]">
-                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
-                    </div>
-                    <div class="flex-1">
-                        <x-layout.sidebar />
-                    </div>
+                    <x-layout.sidebar />
                 </div>
             </div>
         </div>
@@ -88,7 +78,7 @@
             <x-layout.topbar />
 
             <!-- Main Page Slot -->
-            <main class="flex-1 p-4 sm:p-6 lg:p-8 w-full max-w-7xl mx-auto">
+            <main class="flex-1 p-3.5 sm:p-6 lg:p-8 w-full max-w-7xl mx-auto min-w-0">
                 {{ $slot }}
             </main>
 

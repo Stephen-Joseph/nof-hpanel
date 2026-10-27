@@ -3,14 +3,14 @@
     $user = Auth::user();
 @endphp
 
-<header class="flex items-center justify-between gap-4 px-4 sm:px-6 lg:px-8 py-3.5 border-b border-[var(--border)] bg-[var(--bg-shell)] transition-colors duration-150">
+<header class="flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8 py-3 border-b border-[var(--border)] bg-[var(--bg-shell)] transition-colors duration-150 sticky top-0 z-30">
     <!-- Left Tools: Mobile Hamburger & Search -->
-    <div class="flex items-center gap-3 sm:gap-4 flex-1 max-w-lg">
+    <div class="flex items-center gap-2 sm:gap-4 flex-1 min-w-0 max-w-lg">
         <!-- Mobile hamburger toggle -->
         <button
             type="button"
             @click="sidebarOpen = true"
-            class="lg:hidden w-9 h-9 rounded-full flex items-center justify-center border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-[var(--text)] transition"
+            class="lg:hidden w-9 h-9 rounded-full flex items-center justify-center border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-[var(--text)] transition shrink-0 cursor-pointer shadow-2xs"
             aria-label="Open sidebar"
         >
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -24,26 +24,30 @@
                 src="{{ asset('H-Paneltm(1).png') }}" 
                 onerror="this.onerror=null;this.src='{{ asset('logo.png') }}';"
                 alt="{{ config('app.name', 'HPanel') }}" 
-                style="max-height: 32px; width: auto; max-width: 130px;"
-                class="h-7 sm:h-8 w-auto max-w-[130px] object-contain" 
+                style="max-height: 28px; width: auto; max-width: 90px;"
+                class="h-6 sm:h-7 w-auto max-w-[90px] sm:max-w-[120px] object-contain" 
             />
         </a>
 
         <!-- Global Search Palette Trigger -->
-        <livewire:navigation.global-search />
+        <div class="flex-1 min-w-0">
+            <livewire:navigation.global-search />
+        </div>
     </div>
 
     <!-- Right Tools: Icons, Theme Toggle, User Block -->
-    <div class="flex items-center gap-2 sm:gap-3">
-        <!-- Messages Icon Button -->
-        <x-ui.icon-button label="Messages" size="md">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-        </x-ui.icon-button>
+    <div class="flex items-center gap-1.5 sm:gap-3 shrink-0">
+        <!-- Messages Icon Button (Desktop only) -->
+        <div class="hidden md:block">
+            <x-ui.icon-button label="Messages" size="md">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+            </x-ui.icon-button>
+        </div>
 
-        <!-- Notifications Icon Button with Unread Dot -->
-        <div class="relative">
+        <!-- Notifications Icon Button with Unread Dot (Desktop & Tablet) -->
+        <div class="relative hidden sm:block">
             <x-ui.icon-button label="Notifications" size="md">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />

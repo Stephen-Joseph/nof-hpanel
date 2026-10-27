@@ -25,10 +25,10 @@ $badgeClasses = $highlighted
     : 'bg-[var(--bg-shell)] border border-[var(--border)] text-[var(--text)]';
 @endphp
 
-<div {{ $attributes->merge(['class' => "rounded-[20px] p-5 sm:p-6 {$cardBg} flex flex-col justify-between h-48 transition-all duration-150 relative select-none"]) }}>
+<div {{ $attributes->merge(['class' => "rounded-[20px] p-4 sm:p-6 {$cardBg} flex flex-col justify-between min-h-[160px] sm:h-48 transition-all duration-150 relative select-none"]) }}>
     <!-- Header: Title and Circular Arrow Button -->
     <div class="flex items-center justify-between gap-2">
-        <span class="text-sm font-semibold {{ $titleClasses }} truncate">
+        <span class="text-xs sm:text-sm font-semibold {{ $titleClasses }} truncate">
             {{ $title }}
         </span>
 
@@ -57,10 +57,10 @@ $badgeClasses = $highlighted
 
     <!-- Main Metric Readout -->
     <div>
-        <div class="text-4xl font-extrabold tracking-tight flex items-baseline gap-1.5">
+        <div class="text-3xl sm:text-4xl font-extrabold tracking-tight flex items-baseline gap-1.5">
             <span>{{ $value }}</span>
             @if ($unit)
-                <span class="text-base font-semibold {{ $highlighted ? 'text-white/80' : 'text-[var(--text-muted)]' }}">{{ $unit }}</span>
+                <span class="text-sm sm:text-base font-semibold {{ $highlighted ? 'text-white/80' : 'text-[var(--text-muted)]' }}">{{ $unit }}</span>
             @endif
         </div>
 

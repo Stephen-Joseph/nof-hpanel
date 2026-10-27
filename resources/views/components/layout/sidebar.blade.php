@@ -8,15 +8,27 @@
     <div class="space-y-6">
         <!-- Logo Banner -->
         <div class="px-2 pt-1 flex items-center justify-between">
-            <a href="{{ route('dashboard') }}" wire:navigate class="flex items-center group py-1">
+            <a href="{{ route('dashboard') }}" wire:navigate class="flex items-center group py-1" @click="sidebarOpen = false">
                 <img 
                     src="{{ asset('H-Paneltm(1).png') }}" 
                     onerror="this.onerror=null;this.src='{{ asset('logo.png') }}';"
                     alt="{{ config('app.name', 'HPanel') }}" 
                     style="max-height: 40px; width: auto; max-width: 190px;"
-                    class="h-10 w-auto max-w-[190px] object-contain group-hover:opacity-95 transition-all duration-150 filter drop-shadow-2xs dark:drop-shadow-[0_2px_8px_rgba(56,189,248,0.2)]" 
+                    class="h-9 sm:h-10 w-auto max-w-[190px] object-contain group-hover:opacity-95 transition-all duration-150 filter drop-shadow-2xs dark:drop-shadow-[0_2px_8px_rgba(56,189,248,0.2)]" 
                 />
             </a>
+
+            <!-- Mobile Drawer Close Button -->
+            <button
+                type="button"
+                @click="sidebarOpen = false"
+                class="lg:hidden w-8 h-8 rounded-full border border-[var(--border)] flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg-card)] transition cursor-pointer"
+                aria-label="Close sidebar"
+            >
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
         </div>
 
         <!-- Section 1: MENU -->

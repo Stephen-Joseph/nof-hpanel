@@ -18,16 +18,17 @@
     <button
         type="button"
         wire:click="open"
-        class="w-full h-10 flex items-center justify-between gap-3 px-4 text-xs text-[var(--text-muted)] bg-[var(--bg-card)] hover:bg-[var(--bg-shell)] border border-[var(--border)] rounded-full transition-colors duration-150 shadow-2xs group cursor-pointer"
+        class="w-full h-9 sm:h-10 flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 text-xs text-[var(--text-muted)] bg-[var(--bg-card)] hover:bg-[var(--bg-shell)] border border-[var(--border)] rounded-full transition-colors duration-150 shadow-2xs group cursor-pointer"
         aria-label="Search panel (Ctrl+K)"
     >
-        <div class="flex items-center gap-2.5 min-w-0">
+        <div class="flex items-center gap-2 min-w-0">
             <svg class="w-4 h-4 text-[var(--text-muted)] group-hover:text-[var(--text)] transition-colors shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
-            <span class="truncate font-normal text-left">Search panel, domains...</span>
+            <span class="truncate font-normal text-left hidden sm:inline">Search panel, domains...</span>
+            <span class="truncate font-normal text-left sm:hidden text-[11px]">Search...</span>
         </div>
-        <kbd class="font-mono text-[10px] bg-[var(--bg-shell)] border border-[var(--border)] rounded-md px-1.5 py-0.5 text-[var(--text-muted)] font-semibold shadow-2xs shrink-0">Ctrl K</kbd>
+        <kbd class="font-mono text-[10px] bg-[var(--bg-shell)] border border-[var(--border)] rounded-md px-1.5 py-0.5 text-[var(--text-muted)] font-semibold shadow-2xs shrink-0 hidden md:inline-block">Ctrl K</kbd>
     </button>
 
     <!-- Search Palette Modal -->
@@ -39,7 +40,7 @@
         x-transition:leave="ease-in duration-150"
         x-transition:leave-start="opacity-100"
         x-transition:leave-end="opacity-0"
-        class="fixed inset-0 z-50 overflow-y-auto p-4 sm:p-6 md:p-20"
+        class="fixed inset-0 z-50 overflow-y-auto p-2 sm:p-6 md:p-20"
         role="dialog"
         aria-modal="true"
         style="display: none;"
@@ -56,7 +57,7 @@
             x-transition:leave="ease-in duration-150"
             x-transition:leave-start="opacity-100 scale-100"
             x-transition:leave-end="opacity-0 scale-95"
-            class="mx-auto max-w-xl transform divide-y divide-[var(--border)] overflow-hidden rounded-[24px] bg-[var(--bg-card)] border border-[var(--border)] shadow-2xl transition-all"
+            class="mx-auto max-w-xl w-full transform divide-y divide-[var(--border)] overflow-hidden rounded-[20px] sm:rounded-[24px] bg-[var(--bg-card)] border border-[var(--border)] shadow-2xl transition-all"
             @keydown.escape.window="$wire.close()"
         >
             <div class="relative flex items-center px-4 py-3.5">

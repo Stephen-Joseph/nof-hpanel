@@ -13,6 +13,7 @@ $activeClasses = $active
 <a
     href="{{ $href }}"
     wire:navigate
+    @click="sidebarOpen = false"
     @if ($active) aria-current="page" @endif
     {{ $attributes->merge([
         'class' => "relative flex items-center gap-3 px-3.5 py-2.5 rounded-full text-sm font-medium transition-colors duration-150 group select-none {$activeClasses}"
