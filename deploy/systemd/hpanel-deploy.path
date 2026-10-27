@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch /var/lib/hpanel/deploy/trigger.json for HPanel Deployment Trigger
+After=network.target
+
+[Path]
+PathChanged=/var/lib/hpanel/deploy/trigger.json
+Unit=hpanel-deploy.service
+
+[Install]
+WantedBy=multi-user.target
+

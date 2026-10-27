@@ -100,5 +100,21 @@ return [
             'per_minute' => 5,
         ],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Auto-Deploy & Updates Configuration
+    |--------------------------------------------------------------------------
+    */
+    'deploy' => [
+        'webhook_secret' => env('DEPLOY_WEBHOOK_SECRET', ''),
+        'trigger_path' => env('HPANEL_DEPLOY_TRIGGER_PATH', '/var/lib/hpanel/deploy/trigger.json'),
+        'releases_path' => env('HPANEL_DEPLOY_RELEASES_PATH', '/var/lib/hpanel/releases'),
+        'current_release_path' => env('HPANEL_DEPLOY_CURRENT_PATH', '/var/lib/hpanel/deploy/current_release.json'),
+        'origin_status_path' => env('HPANEL_DEPLOY_ORIGIN_STATUS_PATH', '/var/lib/hpanel/deploy/origin_status.json'),
+        'lock_file' => env('HPANEL_DEPLOY_LOCK_FILE', '/var/lock/hpanel-deploy.lock'),
+        'log_file' => env('HPANEL_DEPLOY_LOG_FILE', '/var/log/hpanel-deploy.log'),
+        'repo_url' => env('HPANEL_REPO_URL', 'https://github.com/Stephen-Joseph/nof-hpanel.git'),
+    ],
 ];
 

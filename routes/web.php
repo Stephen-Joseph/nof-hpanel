@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\DatabaseSsoController;
+use App\Http\Controllers\Internal\GitHubDeployWebhookController;
 use App\Http\Controllers\LogDownloadController;
 use App\Models\Account;
 use App\Models\AgentJob;
@@ -11,7 +12,9 @@ use App\Models\AuditLog;
 use App\Models\Domain;
 use App\Models\Package;
 use App\Models\Server;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 // Guest Authentication Routes
 Route::middleware('guest')->group(function () {
@@ -75,6 +78,10 @@ Route::middleware('auth')->group(function () {
         Route::get('/admin/web-server', App\Livewire\Admin\WebServerConfigManager::class)
             ->middleware('can:viewAny,'.Server::class)
             ->name('admin.web-server.index');
+
+        Route::get('/admin/updates', App\Livewire\Admin\SystemUpdatesManager::class)
+            ->middleware('can:viewAny,'.Server::class)
+            ->name('admin.updates.index');
 
         // Servers (Admin Only)
         Route::get('/servers', function () {
@@ -251,3 +258,15 @@ Route::post('/internal/pma/redeem', [DatabaseSsoController::class, 'redeem'])
 
 Route::get('/pma/logout', [DatabaseSsoController::class, 'logout'])
     ->name('pma.logout');
+
+// GitHub Auto-Deploy Webhook (outside session middleware, rate limited)
+Route::post('/internal/deploy/github', GitHubDeployWebhookController::class)
+    ->withoutMiddleware([
+        StartSession::class,
+        ShareErrorsFromSession::class,
+        \Illuminate\Foundation\Http\Middleware\PreventRequestForgery::class,
+        \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
+    ])
+    ->middleware('throttle:30,1')
+    ->name('internal.deploy.github');
+

@@ -1,0 +1,18 @@
+[Unit]
+Description=HPanel Automated Deployment and Update Runner
+After=network-online.target
+Wants=network-online.target
+TimeoutSec=600
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/var/www/hpanel
+ExecStart=/var/www/hpanel/deploy/update.sh
+StandardOutput=append:/var/log/hpanel-deploy.log
+StandardError=append:/var/log/hpanel-deploy.log
+
+[Install]
+WantedBy=multi-user.target
+
