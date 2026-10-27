@@ -22,7 +22,7 @@ func TestVhostProfileGoldenTemplates(t *testing.T) {
 			profile: "php-generic",
 			contains: []string{
 				"root /home/john/public_html;",
-				"try_files $uri $uri/ /index.php?$query_string;",
+				"try_files $uri $uri/ $uri.php?$query_string;",
 				"fastcgi_pass unix:/run/php/php8.3-fpm-john.sock;",
 				"deny all;",
 			},
@@ -580,5 +580,53 @@ func TestVhostWriteActionRollsBackWhenNginxTestFailsAfterLinking(t *testing.T) {
 	availFile := filepath.Join(availDir, "badconfig.com.conf")
 	if _, err := os.Stat(availFile); !os.IsNotExist(err) {
 		t.Errorf("expected available config file to be removed on nginx -t failure")
+	}
+}
+
+func TestVhostProfilesTryFilesRules(t *testing.T) {
+	// 1. Render php-generic profile
+	phpGenericData := VhostTemplateData{
+		Username:     "myuser",
+		Domain:       "genericphp.example.com",
+		DocumentRoot: "/home/myuser/public_html",
+		AppProfile:   "php-generic",
+		PHPVersion:   "8.4",
+	}
+
+	cfgPhpGeneric, err := RenderVhostConfig(phpGenericData)
+	if err != nil {
+		t.Fatalf("failed to render php-generic vhost: %v", err)
+	}
+
+	expectedGenericTryFiles := "try_files $uri $uri/ $uri.php?$query_string;"
+	if !strings.Contains(cfgPhpGeneric, expectedGenericTryFiles) {
+		t.Errorf("php-generic profile missing expected try_files line: %q", expectedGenericTryFiles)
+	}
+	unexpectedGenericTryFiles := "try_files $uri $uri/ /index.php?$query_string;"
+	if strings.Contains(cfgPhpGeneric, unexpectedGenericTryFiles) {
+		t.Errorf("php-generic profile should not contain index.php fallback: %q", unexpectedGenericTryFiles)
+	}
+
+	// 2. Render laravel profile
+	laravelData := VhostTemplateData{
+		Username:     "myuser",
+		Domain:       "laravelapp.example.com",
+		DocumentRoot: "/home/myuser/apps/laravel/public",
+		AppProfile:   "laravel",
+		PHPVersion:   "8.4",
+	}
+
+	cfgLaravel, err := RenderVhostConfig(laravelData)
+	if err != nil {
+		t.Fatalf("failed to render laravel vhost: %v", err)
+	}
+
+	expectedLaravelTryFiles := "try_files $uri $uri/ /index.php?$query_string;"
+	if !strings.Contains(cfgLaravel, expectedLaravelTryFiles) {
+		t.Errorf("laravel profile missing expected try_files line: %q", expectedLaravelTryFiles)
+	}
+	unexpectedLaravelTryFiles := "try_files $uri $uri/ $uri.php?$query_string;"
+	if strings.Contains(cfgLaravel, unexpectedLaravelTryFiles) {
+		t.Errorf("laravel profile should not contain $uri.php fallback: %q", unexpectedLaravelTryFiles)
 	}
 }

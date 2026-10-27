@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Domains;
 
+use App\Enums\AppProfile;
 use App\Jobs\SwitchDomainPhpVersionJob;
 use App\Models\Domain;
 use App\Services\AgentClient;
@@ -14,6 +15,8 @@ class PhpManager extends Component
     public Domain $domain;
 
     public string $php_version = '8.3';
+
+    public string $app_profile = 'php-generic';
 
     public string $memory_limit = '256M';
 
@@ -49,6 +52,7 @@ class PhpManager extends Component
         $package = $this->domain->account->package;
 
         $this->php_version = $this->domain->php_version;
+        $this->app_profile = $this->domain->app_profile->value;
         $this->packageMaxMemory = $package->php_memory_mb ?? 256;
         $this->packageWorkers = $package->php_workers ?? 5;
 
@@ -69,6 +73,7 @@ class PhpManager extends Component
         $this->authorize('update', $this->domain);
 
         $this->validate([
+            'app_profile' => ['required', Rule::in(['php-generic', 'laravel', 'wordpress', 'static-spa'])],
             'php_version' => ['required', Rule::in($this->allowedVersions)],
             'memory_limit' => ['required', Rule::in(['64M', '128M', '256M', '512M', '1024M'])],
             'upload_max_filesize' => ['required', Rule::in(['10M', '32M', '64M', '128M', '256M'])],
@@ -84,6 +89,10 @@ class PhpManager extends Component
 
             return;
         }
+
+        $this->domain->update([
+            'app_profile' => AppProfile::from($this->app_profile),
+        ]);
 
         $iniSettings = [
             'memory_limit' => $this->memory_limit,

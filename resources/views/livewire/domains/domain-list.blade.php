@@ -102,13 +102,22 @@
                     </x-ui.chip>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-[var(--text-muted)]">
-                    {{ $d->app_profile->label() }} <span class="text-[var(--text)] font-semibold">(PHP {{ $d->php_version }})</span>
+                    <button type="button" wire:click="openProfileModal({{ $d->id }})" class="hover:text-blue-600 dark:hover:text-blue-400 font-semibold cursor-pointer text-left inline-flex items-center gap-1 group" title="Click to change application profile">
+                        <span class="group-hover:underline text-[var(--text)]">{{ $d->app_profile->label() }}</span>
+                        <svg class="w-3 h-3 text-[var(--text-muted)] group-hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                    </button>
+                    <span class="text-[var(--text-muted)]">(PHP {{ $d->php_version }})</span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-[var(--text-muted)] truncate max-w-xs">
                     {{ $d->document_root }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-right text-xs">
                     <div class="flex items-center justify-end gap-1.5">
+                        <x-ui.button variant="secondary" size="xs" wire:click="openProfileModal({{ $d->id }})" title="Change App Profile">
+                            Profile
+                        </x-ui.button>
                         <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.redirects', $d) }}'">
                             Redirects
                         </x-ui.button>
@@ -145,4 +154,90 @@
             </tr>
         @endforelse
     </x-ui.table>
+
+    <!-- Change Application Profile Modal -->
+    @if ($showingProfileModal && $editingDomain)
+        <div class="fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true">
+            <div class="flex items-center justify-center min-h-screen px-4 py-6">
+                <div class="fixed inset-0 bg-slate-950/70 backdrop-blur-xs transition-opacity" wire:click="closeProfileModal"></div>
+
+                <div class="relative bg-[var(--bg-card)] border border-[var(--border)] rounded-[24px] overflow-hidden shadow-2xl transform transition-all sm:max-w-lg w-full z-10">
+                    <form wire:submit.prevent="updateAppProfile">
+                        <div class="px-6 py-4.5 border-b border-[var(--border)] flex justify-between items-center">
+                            <div>
+                                <h3 class="text-base font-bold text-[var(--text)] tracking-tight">Application Profile</h3>
+                                <p class="text-xs text-[var(--text-muted)] mt-0.5 font-mono">{{ $editingDomain->domain }}</p>
+                            </div>
+                            <x-ui.icon-button label="Close" variant="ghost" size="sm" wire:click="closeProfileModal">
+                                &times;
+                            </x-ui.icon-button>
+                        </div>
+
+                        <div class="p-6 space-y-3">
+                            <label class="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">
+                                Select Nginx Routing &amp; Execution Profile
+                            </label>
+
+                            <!-- php-generic -->
+                            <label class="flex items-start gap-3 p-3.5 rounded-2xl border {{ $selectedProfile === 'php-generic' ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20' : 'border-[var(--border)] bg-[var(--bg-shell)]' }} cursor-pointer hover:border-blue-500/50 transition">
+                                <input type="radio" wire:model="selectedProfile" value="php-generic" class="mt-1 text-blue-600">
+                                <div>
+                                    <div class="text-sm font-semibold text-[var(--text)]">PHP Generic</div>
+                                    <p class="text-xs text-[var(--text-muted)] mt-0.5">
+                                        Standard PHP website with clean URLs and .php script fallback (<code class="font-mono text-[11px]">try_files $uri $uri/ $uri.php?$query_string;</code>).
+                                    </p>
+                                </div>
+                            </label>
+
+                            <!-- laravel -->
+                            <label class="flex items-start gap-3 p-3.5 rounded-2xl border {{ $selectedProfile === 'laravel' ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20' : 'border-[var(--border)] bg-[var(--bg-shell)]' }} cursor-pointer hover:border-blue-500/50 transition">
+                                <input type="radio" wire:model="selectedProfile" value="laravel" class="mt-1 text-blue-600">
+                                <div>
+                                    <div class="text-sm font-semibold text-[var(--text)]">Laravel Framework</div>
+                                    <p class="text-xs text-[var(--text-muted)] mt-0.5">
+                                        Routes non-file requests to front controller (<code class="font-mono text-[11px]">try_files $uri $uri/ /index.php?$query_string;</code>) with public root.
+                                    </p>
+                                </div>
+                            </label>
+
+                            <!-- wordpress -->
+                            <label class="flex items-start gap-3 p-3.5 rounded-2xl border {{ $selectedProfile === 'wordpress' ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20' : 'border-[var(--border)] bg-[var(--bg-shell)]' }} cursor-pointer hover:border-blue-500/50 transition">
+                                <input type="radio" wire:model="selectedProfile" value="wordpress" class="mt-1 text-blue-600">
+                                <div>
+                                    <div class="text-sm font-semibold text-[var(--text)]">WordPress</div>
+                                    <p class="text-xs text-[var(--text-muted)] mt-0.5">
+                                        Optimized for WordPress CMS with uploads PHP execution blocking and wp-config protection.
+                                    </p>
+                                </div>
+                            </label>
+
+                            <!-- static-spa -->
+                            <label class="flex items-start gap-3 p-3.5 rounded-2xl border {{ $selectedProfile === 'static-spa' ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20' : 'border-[var(--border)] bg-[var(--bg-shell)]' }} cursor-pointer hover:border-blue-500/50 transition">
+                                <input type="radio" wire:model="selectedProfile" value="static-spa" class="mt-1 text-blue-600">
+                                <div>
+                                    <div class="text-sm font-semibold text-[var(--text)]">Static / SPA (Single Page App)</div>
+                                    <p class="text-xs text-[var(--text-muted)] mt-0.5">
+                                        Static HTML/JS sites with client-side routing fallback (<code class="font-mono text-[11px]">try_files $uri $uri/ /index.html;</code>) and asset caching.
+                                    </p>
+                                </div>
+                            </label>
+
+                            @error('selectedProfile')
+                                <span class="text-rose-500 text-xs mt-1 block">{{ $message }}</span>
+                            @enderror
+                        </div>
+
+                        <div class="px-6 py-4 bg-[var(--bg-shell)]/60 border-t border-[var(--border)] flex justify-end gap-3">
+                            <x-ui.button variant="outline" size="sm" wire:click="closeProfileModal">
+                                Cancel
+                            </x-ui.button>
+                            <x-ui.button type="submit" variant="primary" size="sm" loading="updateAppProfile">
+                                Save &amp; Regenerate Virtual Host
+                            </x-ui.button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    @endif
 </div>

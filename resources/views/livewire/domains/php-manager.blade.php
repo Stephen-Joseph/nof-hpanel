@@ -28,6 +28,17 @@
 
                 <div class="space-y-4">
                     <div>
+                        <label class="block text-xs font-medium text-muted mb-1.5">Application Profile</label>
+                        <x-ui.select wire:model="app_profile">
+                            <option value="php-generic">PHP Generic (try_files $uri $uri/ $uri.php?$query_string;)</option>
+                            <option value="laravel">Laravel Framework (try_files $uri $uri/ /index.php?$query_string;)</option>
+                            <option value="wordpress">WordPress (try_files $uri $uri/ /index.php?$args;)</option>
+                            <option value="static-spa">Static HTML / Single Page App (try_files $uri $uri/ /index.html;)</option>
+                        </x-ui.select>
+                        <p class="text-[11px] text-muted mt-1">Defines Nginx virtual host URL rewrite &amp; execution profile.</p>
+                    </div>
+
+                    <div>
                         <label class="block text-xs font-medium text-muted mb-1.5">Active PHP Version</label>
                         <x-ui.select wire:model="php_version">
                             @foreach ($allowedVersions as $ver)

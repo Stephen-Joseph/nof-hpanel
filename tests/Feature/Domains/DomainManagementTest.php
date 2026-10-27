@@ -264,3 +264,71 @@ test('cross tenant domain manipulation is prohibited', function () {
         ->call('deleteDomain', $addonBob->id)
         ->assertForbidden();
 });
+
+test('customer can choose and update application profile in domain list', function () {
+    Queue::fake();
+
+    $this->domain1->update(['app_profile' => AppProfile::LARAVEL]);
+
+    Livewire::actingAs($this->customer1)
+        ->test(DomainList::class)
+        ->call('openProfileModal', $this->domain1->id)
+        ->assertSet('showingProfileModal', true)
+        ->assertSet('editingDomainId', $this->domain1->id)
+        ->assertSet('selectedProfile', 'laravel')
+        ->set('selectedProfile', 'php-generic')
+        ->call('updateAppProfile')
+        ->assertSet('showingProfileModal', false)
+        ->assertHasNoErrors();
+
+    $this->domain1->refresh();
+    expect($this->domain1->app_profile)->toEqual(AppProfile::PHP_GENERIC);
+
+    Queue::assertPushed(WriteVhostJob::class, function ($job) {
+        return $job->domain->id === $this->domain1->id;
+    });
+});
+
+test('cross-tenant application profile update is forbidden in domain list', function () {
+    Livewire::actingAs($this->customer1)
+        ->test(DomainList::class)
+        ->call('openProfileModal', $this->domain2->id)
+        ->assertForbidden();
+});
+
+test('customer can update application profile in php manager', function () {
+    Queue::fake();
+
+    $this->domain1->update(['app_profile' => AppProfile::LARAVEL]);
+
+    Livewire::actingAs($this->customer1)
+        ->test(\App\Livewire\Domains\PhpManager::class, ['domain' => $this->domain1])
+        ->set('app_profile', 'php-generic')
+        ->call('saveSettings')
+        ->assertHasNoErrors()
+        ->assertSee('PHP version updated to');
+
+    $this->domain1->refresh();
+    expect($this->domain1->app_profile)->toEqual(AppProfile::PHP_GENERIC);
+
+    Queue::assertPushed(\App\Jobs\SwitchDomainPhpVersionJob::class);
+});
+
+test('domains regenerate-vhost command updates domain to php-generic and writes vhost', function () {
+    Queue::fake();
+
+    $domain = Domain::factory()->create([
+        'account_id' => $this->account1->id,
+        'domain' => 'copyplusdtp.in',
+        'type' => DomainType::ADDON,
+        'app_profile' => AppProfile::LARAVEL,
+        'document_root' => '/home/alicecorp/copyplusdtp.in',
+    ]);
+
+    $this->artisan('domains:regenerate-vhost copyplusdtp.in php-generic')
+        ->assertExitCode(0)
+        ->expectsOutputToContain("Domain 'copyplusdtp.in' updated to 'php-generic' and virtual host regenerated.");
+
+    $domain->refresh();
+    expect($domain->app_profile)->toEqual(AppProfile::PHP_GENERIC);
+});
