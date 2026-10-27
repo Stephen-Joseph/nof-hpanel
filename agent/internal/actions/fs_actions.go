@@ -147,63 +147,65 @@ func (a *FsListAction) Execute(ctx context.Context, payload []byte, dryRun bool)
 	}
 
 	homeDir := filepath.Join(a.homeBaseDir, p.Username)
-	targetPath := homeDir
+	resolvedPath := homeDir
 	if p.Path != "" {
 		safe, err := ResolveSafePathWithBase(a.homeBaseDir, p.Username, p.Path)
 		if err != nil {
 			return &ActionResult{Success: false, Error: err.Error()}, err
 		}
-		targetPath = safe
+		resolvedPath = safe
 	}
 
-	relPath, _ := filepath.Rel(homeDir, targetPath)
-	if relPath == "." {
-		relPath = ""
-	}
+	logs := []string{fmt.Sprintf("listing fs directory: %s", resolvedPath)}
 
-	logs := []string{fmt.Sprintf("listing fs directory: %s", targetPath)}
-
-	if dryRun {
-		now := time.Now()
-		mockEntries := []FsEntry{
-			{Name: "public_html", Path: filepath.Join(targetPath, "public_html"), Type: "directory", Mode: "0755", ModTime: now, Owner: p.Username},
-			{Name: "logs", Path: filepath.Join(targetPath, "logs"), Type: "directory", Mode: "0750", ModTime: now, Owner: p.Username},
-			{Name: "index.html", Path: filepath.Join(targetPath, "index.html"), Type: "file", Size: 512, Mode: "0644", ModTime: now, Owner: p.Username, IsEditable: true, Extension: "html"},
-		}
-		return &ActionResult{
-			Success: true,
-			Data: map[string]any{
-				"current_path": targetPath,
-				"rel_path":     relPath,
-				"parent_path":  filepath.Dir(targetPath),
-				"entries":      mockEntries,
-				"total":        len(mockEntries),
-				"dry_run":      true,
-			},
-			Logs: logs,
-		}, nil
-	}
-
-	// Verify targetPath is not an escaping symlink
-	lfi, err := os.Lstat(targetPath)
+	// Verify resolvedPath is not an escaping symlink or non-existent
+	lfi, err := os.Lstat(resolvedPath)
 	if err != nil {
+		if dryRun && os.IsNotExist(err) {
+			relPath, _ := filepath.Rel(homeDir, resolvedPath)
+			if relPath == "." {
+				relPath = ""
+			}
+			return &ActionResult{
+				Success: true,
+				Data: map[string]any{
+					"current_path": resolvedPath,
+					"rel_path":     relPath,
+					"parent_path":  filepath.Dir(resolvedPath),
+					"entries":      []FsEntry{},
+					"total":        0,
+					"dry_run":      true,
+				},
+				Logs: logs,
+			}, nil
+		}
 		return &ActionResult{Success: false, Error: fmt.Sprintf("path not found: %s", err), Logs: logs}, err
 	}
+
 	if lfi.Mode()&os.ModeSymlink != 0 {
-		realTgt, err := filepath.EvalSymlinks(targetPath)
+		realTgt, err := filepath.EvalSymlinks(resolvedPath)
 		if err != nil || (!strings.HasPrefix(realTgt, homeDir+string(filepath.Separator)) && realTgt != homeDir) {
 			return &ActionResult{Success: false, Error: "symlink escapes account home", Logs: logs}, fmt.Errorf("symlink target escapes home directory: %s", realTgt)
 		}
 	}
 
-	dirEntries, err := os.ReadDir(targetPath)
+	statInfo, err := os.Stat(resolvedPath)
 	if err != nil {
-		return &ActionResult{Success: false, Error: fmt.Sprintf("failed reading directory '%s': %s", targetPath, err), Logs: logs}, err
+		return &ActionResult{Success: false, Error: fmt.Sprintf("stat error: %s", err), Logs: logs}, err
+	}
+	if !statInfo.IsDir() {
+		return &ActionResult{Success: false, Error: fmt.Sprintf("path '%s' is not a directory", resolvedPath), Logs: logs}, fmt.Errorf("path '%s' is not a directory", resolvedPath)
 	}
 
-	var entries []FsEntry
+	dirEntries, err := os.ReadDir(resolvedPath)
+	if err != nil {
+		return &ActionResult{Success: false, Error: fmt.Sprintf("failed reading directory '%s': %s", resolvedPath, err), Logs: logs}, err
+	}
+
+	entries := []FsEntry{}
 	for _, de := range dirEntries {
-		entryPath := filepath.Join(targetPath, de.Name())
+		name := de.Name()
+		entryPath := filepath.Join(resolvedPath, name)
 		info, err := os.Lstat(entryPath)
 		if err != nil {
 			continue
@@ -220,12 +222,12 @@ func (a *FsListAction) Execute(ctx context.Context, payload []byte, dryRun bool)
 			itemType = "directory"
 		}
 
-		ext := strings.TrimPrefix(filepath.Ext(de.Name()), ".")
+		ext := strings.TrimPrefix(filepath.Ext(name), ".")
 		isEditable := itemType == "file" && info.Size() <= 1024*1024 && isTextExtension(ext)
 		owner := getFileOwner(info, p.Username)
 
 		entries = append(entries, FsEntry{
-			Name:       de.Name(),
+			Name:       name,
 			Path:       entryPath,
 			Type:       itemType,
 			Size:       info.Size(),
@@ -246,21 +248,31 @@ func (a *FsListAction) Execute(ctx context.Context, payload []byte, dryRun bool)
 		return entries[i].Name < entries[j].Name
 	})
 
+	relPath, _ := filepath.Rel(homeDir, resolvedPath)
+	if relPath == "." {
+		relPath = ""
+	}
+
 	var parentPath string
-	if targetPath != homeDir {
-		parentPath = filepath.Dir(targetPath)
+	if resolvedPath != homeDir {
+		parentPath = filepath.Dir(resolvedPath)
+	}
+
+	data := map[string]any{
+		"current_path": resolvedPath,
+		"rel_path":     relPath,
+		"parent_path":  parentPath,
+		"entries":      entries,
+		"total":        len(entries),
+	}
+	if dryRun {
+		data["dry_run"] = true
 	}
 
 	return &ActionResult{
 		Success: true,
-		Data: map[string]any{
-			"current_path": targetPath,
-			"rel_path":     relPath,
-			"parent_path":  parentPath,
-			"entries":      entries,
-			"total":        len(entries),
-		},
-		Logs: logs,
+		Data:    data,
+		Logs:    logs,
 	}, nil
 }
 
@@ -298,7 +310,7 @@ func (a *FsStatAction) Validate(payload []byte) error {
 	if err := ValidateLinuxUsername(p.Username); err != nil {
 		return err
 	}
-	_, err := ResolveSafePathWithBase(a.homeBaseDir, p.Username, p.Path)
+	_, err := ResolveSafePathNoFollowWithBase(a.homeBaseDir, p.Username, p.Path)
 	return err
 }
 
@@ -308,29 +320,29 @@ func (a *FsStatAction) Execute(ctx context.Context, payload []byte, dryRun bool)
 		return &ActionResult{Success: false, Error: err.Error()}, err
 	}
 
-	safePath, err := ResolveSafePathWithBase(a.homeBaseDir, p.Username, p.Path)
+	resolvedPath, err := ResolveSafePathNoFollowWithBase(a.homeBaseDir, p.Username, p.Path)
 	if err != nil {
 		return &ActionResult{Success: false, Error: err.Error()}, err
 	}
 
-	logs := []string{fmt.Sprintf("stat path: %s", safePath)}
-	if dryRun {
-		return &ActionResult{
-			Success: true,
-			Data: map[string]any{
-				"name":    filepath.Base(safePath),
-				"path":    safePath,
-				"type":    "file",
-				"size":    1024,
-				"mode":    "0644",
-				"dry_run": true,
-			},
-			Logs: logs,
-		}, nil
-	}
+	logs := []string{fmt.Sprintf("stat path: %s", resolvedPath)}
 
-	info, err := os.Lstat(safePath)
+	info, err := os.Lstat(resolvedPath)
 	if err != nil {
+		if dryRun && os.IsNotExist(err) {
+			return &ActionResult{
+				Success: true,
+				Data: map[string]any{
+					"name":    filepath.Base(resolvedPath),
+					"path":    resolvedPath,
+					"type":    "file",
+					"size":    0,
+					"mode":    "0644",
+					"dry_run": true,
+				},
+				Logs: logs,
+			}, nil
+		}
 		return &ActionResult{Success: false, Error: fmt.Sprintf("stat error: %s", err), Logs: logs}, err
 	}
 
@@ -338,31 +350,36 @@ func (a *FsStatAction) Execute(ctx context.Context, payload []byte, dryRun bool)
 	targetLink := ""
 	if info.Mode()&os.ModeSymlink != 0 {
 		itemType = "symlink"
-		if readTarget, err := os.Readlink(safePath); err == nil {
+		if readTarget, err := os.Readlink(resolvedPath); err == nil {
 			targetLink = readTarget
 		}
 	} else if info.IsDir() {
 		itemType = "directory"
 	}
 
-	ext := strings.TrimPrefix(filepath.Ext(safePath), ".")
+	ext := strings.TrimPrefix(filepath.Ext(resolvedPath), ".")
 	owner := getFileOwner(info, p.Username)
+
+	data := map[string]any{
+		"name":        filepath.Base(resolvedPath),
+		"path":        resolvedPath,
+		"type":        itemType,
+		"size":        info.Size(),
+		"mode":        fmt.Sprintf("%04o", info.Mode().Perm()),
+		"mod_time":    info.ModTime(),
+		"owner":       owner,
+		"extension":   ext,
+		"target":      targetLink,
+		"is_editable": itemType == "file" && info.Size() <= 1024*1024 && isTextExtension(ext),
+	}
+	if dryRun {
+		data["dry_run"] = true
+	}
 
 	return &ActionResult{
 		Success: true,
-		Data: map[string]any{
-			"name":        filepath.Base(safePath),
-			"path":        safePath,
-			"type":        itemType,
-			"size":        info.Size(),
-			"mode":        fmt.Sprintf("%04o", info.Mode().Perm()),
-			"mod_time":    info.ModTime(),
-			"owner":       owner,
-			"extension":   ext,
-			"target":      targetLink,
-			"is_editable": itemType == "file" && info.Size() <= 1024*1024 && isTextExtension(ext),
-		},
-		Logs: logs,
+		Data:    data,
+		Logs:    logs,
 	}, nil
 }
 
@@ -552,10 +569,10 @@ func (a *FsRenameAction) Validate(payload []byte) error {
 	if err := ValidateLinuxUsername(p.Username); err != nil {
 		return err
 	}
-	if _, err := ResolveSafePathWithBase(a.homeBaseDir, p.Username, p.SourcePath); err != nil {
+	if _, err := ResolveSafePathNoFollowWithBase(a.homeBaseDir, p.Username, p.SourcePath); err != nil {
 		return fmt.Errorf("invalid source_path: %w", err)
 	}
-	if _, err := ResolveSafePathWithBase(a.homeBaseDir, p.Username, p.TargetPath); err != nil {
+	if _, err := ResolveSafePathNoFollowWithBase(a.homeBaseDir, p.Username, p.TargetPath); err != nil {
 		return fmt.Errorf("invalid target_path: %w", err)
 	}
 	return nil
@@ -567,11 +584,11 @@ func (a *FsRenameAction) Execute(ctx context.Context, payload []byte, dryRun boo
 		return &ActionResult{Success: false, Error: err.Error()}, err
 	}
 
-	srcSafe, err := ResolveSafePathWithBase(a.homeBaseDir, p.Username, p.SourcePath)
+	srcSafe, err := ResolveSafePathNoFollowWithBase(a.homeBaseDir, p.Username, p.SourcePath)
 	if err != nil {
 		return &ActionResult{Success: false, Error: err.Error()}, err
 	}
-	tgtSafe, err := ResolveSafePathWithBase(a.homeBaseDir, p.Username, p.TargetPath)
+	tgtSafe, err := ResolveSafePathNoFollowWithBase(a.homeBaseDir, p.Username, p.TargetPath)
 	if err != nil {
 		return &ActionResult{Success: false, Error: err.Error()}, err
 	}
@@ -579,6 +596,12 @@ func (a *FsRenameAction) Execute(ctx context.Context, payload []byte, dryRun boo
 	homeDir := filepath.Join(a.homeBaseDir, p.Username)
 	if srcSafe == homeDir {
 		return &ActionResult{Success: false, Error: "cannot rename account home root directory"}, errors.New("cannot rename account home root directory")
+	}
+
+	if _, err := os.Lstat(srcSafe); err != nil {
+		if !dryRun {
+			return &ActionResult{Success: false, Error: fmt.Sprintf("source path not found: %s", err)}, err
+		}
 	}
 
 	logs := []string{fmt.Sprintf("renaming '%s' to '%s'", srcSafe, tgtSafe)}
@@ -1027,22 +1050,23 @@ func (a *FsReadTextAction) Execute(ctx context.Context, payload []byte, dryRun b
 	}
 
 	logs := []string{fmt.Sprintf("reading text file: %s", safePath)}
-	if dryRun {
-		return &ActionResult{
-			Success: true,
-			Data: map[string]any{
-				"path":      safePath,
-				"content":   "Sample text content\n",
-				"size":      20,
-				"is_binary": false,
-				"dry_run":   true,
-			},
-			Logs: logs,
-		}, nil
-	}
-
 	info, err := os.Stat(safePath)
 	if err != nil {
+		if dryRun && os.IsNotExist(err) {
+			return &ActionResult{
+				Success: true,
+				Data: map[string]any{
+					"path":      safePath,
+					"content":   "",
+					"size":      0,
+					"mode":      "0644",
+					"extension": strings.TrimPrefix(filepath.Ext(safePath), "."),
+					"is_binary": false,
+					"dry_run":   true,
+				},
+				Logs: logs,
+			}, nil
+		}
 		return &ActionResult{Success: false, Error: fmt.Sprintf("file not found: %s", err), Logs: logs}, err
 	}
 	if info.IsDir() {
@@ -1064,16 +1088,21 @@ func (a *FsReadTextAction) Execute(ctx context.Context, payload []byte, dryRun b
 		return &ActionResult{Success: false, Error: "binary file detected: NUL byte found", Logs: logs}, errors.New("binary file detected: NUL byte found")
 	}
 
+	data := map[string]any{
+		"path":      safePath,
+		"content":   string(content),
+		"size":      info.Size(),
+		"mode":      fmt.Sprintf("%04o", info.Mode().Perm()),
+		"extension": strings.TrimPrefix(filepath.Ext(safePath), "."),
+	}
+	if dryRun {
+		data["dry_run"] = true
+	}
+
 	return &ActionResult{
 		Success: true,
-		Data: map[string]any{
-			"path":      safePath,
-			"content":   string(content),
-			"size":      info.Size(),
-			"mode":      fmt.Sprintf("%04o", info.Mode().Perm()),
-			"extension": strings.TrimPrefix(filepath.Ext(safePath), "."),
-		},
-		Logs: logs,
+		Data:    data,
+		Logs:    logs,
 	}, nil
 }
 

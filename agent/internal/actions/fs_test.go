@@ -446,3 +446,102 @@ func TestFsDryRun(t *testing.T) {
 		}
 	}
 }
+
+func TestFsListCorrectEntriesAndRefusesEscape(t *testing.T) {
+	tempBase := t.TempDir()
+	username := "admin263"
+	homeDir := filepath.Join(tempBase, username)
+	if err := os.MkdirAll(homeDir, 0711); err != nil {
+		t.Fatalf("failed creating home dir: %v", err)
+	}
+
+	// 1. Create public_html/index.html and home/logs
+	publicHtml := filepath.Join(homeDir, "public_html")
+	if err := os.MkdirAll(publicHtml, 0755); err != nil {
+		t.Fatalf("failed creating public_html dir: %v", err)
+	}
+	indexPath := filepath.Join(publicHtml, "index.html")
+	if err := os.WriteFile(indexPath, []byte("<h1>Welcome to HPanel</h1>\n"), 0644); err != nil {
+		t.Fatalf("failed creating index.html: %v", err)
+	}
+
+	logsDir := filepath.Join(homeDir, "logs")
+	if err := os.MkdirAll(logsDir, 0750); err != nil {
+		t.Fatalf("failed creating logs dir: %v", err)
+	}
+
+	ctx := context.Background()
+	listAction := NewFsListActionWithBase(tempBase)
+
+	// 2. List public_html
+	listPayload, err := json.Marshal(FsListPayload{
+		Username: username,
+		Path:     "public_html",
+	})
+	if err != nil {
+		t.Fatalf("marshal list payload error: %v", err)
+	}
+
+	res, err := listAction.Execute(ctx, listPayload, false)
+	if err != nil || !res.Success {
+		t.Fatalf("fs.list public_html failed: %v, res: %+v", err, res)
+	}
+
+	entries, ok := res.Data["entries"].([]FsEntry)
+	if !ok {
+		t.Fatalf("expected []FsEntry in Data['entries'], got %T", res.Data["entries"])
+	}
+
+	// 3. Assert only index.html is returned with the correct path
+	if len(entries) != 1 {
+		t.Fatalf("expected exactly 1 entry in public_html, got %d: %+v", len(entries), entries)
+	}
+	if entries[0].Name != "index.html" {
+		t.Errorf("expected entry name 'index.html', got '%s'", entries[0].Name)
+	}
+	expectedIndexPath := filepath.Join(publicHtml, "index.html")
+	if entries[0].Path != expectedIndexPath {
+		t.Errorf("expected entry path '%s', got '%s'", expectedIndexPath, entries[0].Path)
+	}
+	if entries[0].Type != "file" {
+		t.Errorf("expected entry type 'file', got '%s'", entries[0].Type)
+	}
+
+	// Verify neither public_html nor logs is returned
+	for _, entry := range entries {
+		if entry.Name == "public_html" || entry.Name == "logs" {
+			t.Errorf("unexpected sibling directory '%s' found in public_html listing", entry.Name)
+		}
+	}
+
+	// 4. Assert that fs.list refuses the home-escaping path "../"
+	escapePayload, _ := json.Marshal(FsListPayload{
+		Username: username,
+		Path:     "../",
+	})
+	valErr := listAction.Validate(escapePayload)
+	execRes, execErr := listAction.Execute(ctx, escapePayload, false)
+	if valErr == nil && execErr == nil && execRes.Success {
+		t.Errorf("expected fs.list to refuse '../' escaping home, but it succeeded")
+	}
+
+	// 5. Assert that fs.list refuses symlinks pointing outside
+	outsideDir := filepath.Join(tempBase, "outside_dir")
+	if err := os.MkdirAll(outsideDir, 0755); err != nil {
+		t.Fatalf("failed creating outside_dir: %v", err)
+	}
+	outsideSymlink := filepath.Join(homeDir, "outside_symlink")
+	if err := os.Symlink(outsideDir, outsideSymlink); err != nil {
+		t.Fatalf("failed creating outside symlink: %v", err)
+	}
+
+	symlinkPayload, _ := json.Marshal(FsListPayload{
+		Username: username,
+		Path:     "outside_symlink",
+	})
+	valSymErr := listAction.Validate(symlinkPayload)
+	symRes, symErr := listAction.Execute(ctx, symlinkPayload, false)
+	if valSymErr == nil && symErr == nil && symRes.Success {
+		t.Errorf("expected fs.list to refuse symlink pointing outside, but it succeeded: %+v", symRes)
+	}
+}
