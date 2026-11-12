@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\DomainType;
 use App\Models\Domain;
 use App\Models\User;
 
@@ -39,6 +40,10 @@ class DomainPolicy
 
     public function delete(User $user, Domain $domain): bool
     {
+        if ($domain->is_primary || $domain->type === DomainType::PRIMARY) {
+            return false;
+        }
+
         return $this->view($user, $domain);
     }
 

@@ -18,6 +18,8 @@
         </x-slot:actions>
     </x-layout.page-header>
 
+    <x-domain-tabs :domain="$domain" active="pointing" />
+
     <!-- Session Feedback Alerts -->
     @if (session()->has('status'))
         <div class="mb-6 rounded-[20px] bg-emerald-500/10 border border-emerald-500/20 p-4 text-sm text-emerald-600 dark:text-emerald-400">
@@ -112,7 +114,22 @@
                                         <span x-show="copied" class="text-emerald-500 font-semibold">Copied!</span>
                                     </button>
                                 </div>
-                                <p class="mt-2 text-[11px] text-muted">Alternatively, create A/AAAA records that match the resolved IP addresses of <code class="font-mono">{{ $edgeHost }}</code>.</p>
+                                <p class="mt-2 text-[11px] text-muted">Alternatively, create A/AAAA records that match the resolved IP addresses of <code class="font-mono">{{ $edgeHost }}</code>:</p>
+                                @if (! empty($edgeIps))
+                                    <div class="mt-2 space-y-1.5">
+                                        @foreach ($edgeIps as $ip)
+                                            <div class="flex items-center gap-2" x-data="{ copiedIp: false }">
+                                                <span class="font-mono font-bold text-primary-500">A</span>
+                                                <code class="px-2 py-0.5 rounded bg-card border border-border font-mono text-xs text-main select-all">{{ $ip }}</code>
+                                                <button type="button" x-on:click="navigator.clipboard.writeText('{{ $ip }}'); copiedIp = true; setTimeout(() => copiedIp = false, 2000)"
+                                                    class="px-2 py-0.5 text-[11px] rounded border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer">
+                                                    <span x-show="!copiedIp">Copy</span>
+                                                    <span x-show="copiedIp" class="text-emerald-500 font-semibold">Copied!</span>
+                                                </button>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                @endif
                             </div>
                             <div class="mt-3">
                                 <span class="font-semibold">For WWW subdomain:</span> Add a standard CNAME record for <code class="font-mono">www</code> pointing to <code class="font-mono">{{ $edgeHost }}</code>.

@@ -8,6 +8,7 @@ use App\Models\Account;
 use App\Models\AgentJob;
 use App\Services\AgentClient;
 use App\Services\AuditService;
+use App\Services\PrimaryDomainService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
@@ -34,9 +35,10 @@ class ProvisionAccount implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(AgentClient $client, AuditService $audit): void
+    public function handle(AgentClient $client, AuditService $audit, ?PrimaryDomainService $primaryDomains = null): void
     {
         $this->account->loadMissing(['server', 'package', 'user']);
+        ($primaryDomains ?? app(PrimaryDomainService::class))->ensureForAccount($this->account);
         $server = $this->account->server;
         $package = $this->account->package;
 

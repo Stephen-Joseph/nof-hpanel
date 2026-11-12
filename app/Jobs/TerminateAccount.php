@@ -80,6 +80,7 @@ class TerminateAccount implements ShouldQueue
             if ($response['success']) {
                 $agentJob->markCompleted($response['data']);
                 $this->account->transitionTo(AccountStatus::TERMINATED);
+                $this->account->domains()->delete();
 
                 try {
                     $audit->log(

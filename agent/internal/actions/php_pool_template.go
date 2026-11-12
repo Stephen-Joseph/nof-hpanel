@@ -6,15 +6,29 @@ import (
 	"text/template"
 )
 
+const (
+	DefaultDisableFunctions   = "system,passthru,popen,shell_exec,show_source,dl,pcntl_exec"
+	AllowExecDisableFunctions = "show_source,dl"
+)
+
+// PhpFpmSocketPath returns the canonical PHP-FPM Unix socket path for an account and PHP version.
+// Both the pool template and Nginx vhost template must use this helper so they never diverge.
+func PhpFpmSocketPath(version, username string) string {
+	return fmt.Sprintf("/run/php/php%s-fpm-%s.sock", version, username)
+}
+
 type PhpPoolTemplateData struct {
-	Username        string
-	Version         string
-	PmMode          string
-	MaxChildren     int
-	StartServers    int
-	MinSpareServers int
-	MaxSpareServers int
-	Settings        PhpIniSettings
+	Username           string
+	Version            string
+	SocketPath         string
+	PmMode             string
+	MaxChildren        int
+	StartServers       int
+	MinSpareServers    int
+	MaxSpareServers    int
+	AllowExecFunctions bool
+	DisableFunctions   string
+	Settings           PhpIniSettings
 }
 
 const fpmPoolTemplate = `; HPanel PHP-FPM Pool Configuration
@@ -25,8 +39,9 @@ const fpmPoolTemplate = `; HPanel PHP-FPM Pool Configuration
 [{{.Username}}]
 user = {{.Username}}
 group = {{.Username}}
+chdir = /home/{{.Username}}
 
-listen = /run/php/php{{.Version}}-fpm-{{.Username}}.sock
+listen = {{.SocketPath}}
 listen.owner = www-data
 listen.group = www-data
 listen.mode = 0660
@@ -42,6 +57,7 @@ pm.min_spare_servers = {{.MinSpareServers}}
 pm.max_spare_servers = {{.MaxSpareServers}}
 pm.max_requests = 1000
 {{end}}
+request_terminate_timeout = 300s
 
 pm.status_path = /status-{{.Username}}
 ping.path = /ping-{{.Username}}
@@ -52,10 +68,12 @@ catch_workers_output = yes
 decorate_workers_output = no
 
 ; Open basedir & account isolation
-php_admin_value[open_basedir] = /home/{{.Username}}/:/tmp/:/var/tmp/
+php_admin_value[open_basedir] = /home/{{.Username}}/:/tmp/:/usr/share/php/:/var/lib/php/sessions/
+php_admin_value[disable_functions] = {{.DisableFunctions}}
 php_admin_value[upload_tmp_dir] = /home/{{.Username}}/tmp
 php_admin_value[session.save_path] = /home/{{.Username}}/tmp
-php_admin_value[error_log] = /home/{{.Username}}/logs/php_error.log
+php_admin_value[sys_temp_dir] = /home/{{.Username}}/tmp
+php_admin_value[error_log] = /home/{{.Username}}/logs/php-error.log
 php_admin_flag[log_errors] = on
 
 ; Custom PHP INI Overrides
@@ -78,11 +96,18 @@ php_flag[display_errors] = {{.Settings.DisplayErrors}}
 
 // RenderPhpPoolConfig generates the PHP-FPM pool configuration.
 func RenderPhpPoolConfig(data PhpPoolTemplateData) (string, error) {
-	if data.PmMode == "" {
-		data.PmMode = "ondemand"
+	if data.SocketPath == "" {
+		data.SocketPath = PhpFpmSocketPath(data.Version, data.Username)
 	}
 	if data.MaxChildren <= 0 {
 		data.MaxChildren = 5
+	}
+	if data.PmMode == "" {
+		if data.MaxChildren > 5 {
+			data.PmMode = "dynamic"
+		} else {
+			data.PmMode = "ondemand"
+		}
 	}
 	if data.PmMode == "dynamic" {
 		if data.StartServers <= 0 {
@@ -93,6 +118,13 @@ func RenderPhpPoolConfig(data PhpPoolTemplateData) (string, error) {
 		}
 		if data.MaxSpareServers <= 0 {
 			data.MaxSpareServers = 3
+		}
+	}
+	if data.DisableFunctions == "" {
+		if data.AllowExecFunctions {
+			data.DisableFunctions = AllowExecDisableFunctions
+		} else {
+			data.DisableFunctions = DefaultDisableFunctions
 		}
 	}
 

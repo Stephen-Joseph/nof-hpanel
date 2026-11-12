@@ -166,6 +166,11 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 		p.DocumentRoot = fmt.Sprintf("/home/%s/public_html", p.Username)
 	}
 
+	isLaravelPublicRoot := false
+	if p.AppProfile == "laravel" && p.Username != "" {
+		p.DocumentRoot, isLaravelPublicRoot = DetectLaravelRoot(p.Username, p.DocumentRoot)
+	}
+
 	bareDomain := strings.TrimPrefix(p.Domain, "www.")
 	wwwDomain := "www." + bareDomain
 	var serverNamesList []string
@@ -197,6 +202,14 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 		}
 	}
 
+	availPath := filepath.Join(a.vhostAvailableDir, fmt.Sprintf("%s.conf", p.Domain))
+	existingCustomBlock := ""
+	if existingBytes, err := os.ReadFile(availPath); err == nil {
+		if extracted, ok := ExtractCustomBlock(string(existingBytes)); ok {
+			existingCustomBlock = extracted
+		}
+	}
+
 	vhostData := VhostTemplateData{
 		Username:            p.Username,
 		Domain:              p.Domain,
@@ -213,6 +226,9 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 		Redirects:           p.Redirects,
 		ProtectedDirs:       p.ProtectedDirs,
 		HpanelCustomInclude: customConfPath,
+		CustomBlock:         existingCustomBlock,
+		SocketPath:          PhpFpmSocketPath(p.PHPVersion, p.Username),
+		IsLaravelPublicRoot: isLaravelPublicRoot,
 	}
 
 	configContent, err := RenderVhostConfig(vhostData)
@@ -244,7 +260,6 @@ func (a *VhostWriteAction) Execute(ctx context.Context, payload []byte, dryRun b
 	}
 
 	// Real Linux Nginx deployment
-	availPath := filepath.Join(a.vhostAvailableDir, fmt.Sprintf("%s.conf", p.Domain))
 	enabledPath := filepath.Join(a.vhostEnabledDir, fmt.Sprintf("%s.conf", p.Domain))
 	backupPath := availPath + ".bak"
 

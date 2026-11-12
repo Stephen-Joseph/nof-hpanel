@@ -26,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property int $max_cron_jobs
  * @property int $php_workers
  * @property int $php_memory_mb
+ * @property bool $allow_exec_functions
  * @property list<string> $allowed_php_versions
  * @property int $backups_retained
  * @property bool $ssh_enabled
@@ -49,6 +50,7 @@ use Illuminate\Support\Carbon;
     'max_cron_jobs',
     'php_workers',
     'php_memory_mb',
+    'allow_exec_functions',
     'allowed_php_versions',
     'backups_retained',
     'ssh_enabled',
@@ -79,6 +81,7 @@ class Package extends Model
             'max_cron_jobs' => 'integer',
             'php_workers' => 'integer',
             'php_memory_mb' => 'integer',
+            'allow_exec_functions' => 'boolean',
             'allowed_php_versions' => 'array',
             'backups_retained' => 'integer',
             'ssh_enabled' => 'boolean',

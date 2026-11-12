@@ -18,16 +18,18 @@ use App\Models\Account;
 use App\Models\Package;
 use App\Models\Server;
 use App\Models\User;
+use App\Services\PrimaryDomainService;
 use App\Services\WebhookService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 
 class AccountController extends Controller
 {
-    public function store(CreateAccountRequest $request, WebhookService $webhooks): JsonResponse
+    public function store(CreateAccountRequest $request, WebhookService $webhooks, PrimaryDomainService $primaryDomains): JsonResponse
     {
         /** @var User $actor */
         $actor = $request->user();
@@ -43,28 +45,16 @@ class AccountController extends Controller
 
         $validated = $request->validated();
 
-        // 1. Resolve or create customer user
-        /** @var User|null $customer */
-        $customer = User::where('email', $validated['customer_email'])->first();
-        if (! $customer) {
-            $customer = User::create([
-                'name' => $validated['customer_name'] ?? $validated['username'],
-                'email' => $validated['customer_email'],
-                'password' => Hash::make(Str::random(32)),
-                'role' => UserRole::CUSTOMER,
-                'parent_id' => $actor->isReseller() ? $actor->id : null,
-                'email_verified_at' => now(),
-            ]);
-        } else {
-            // Check tenancy
-            if ($actor->isReseller() && ! $customer->isDescendantOf($actor) && $customer->id !== $actor->id) {
-                return response()->json([
-                    'error' => [
-                        'code' => 'TENANCY_VIOLATION',
-                        'message' => 'Cannot assign account to a customer outside your reseller subtree.',
-                    ],
-                ], 403);
-            }
+        // 1. Check tenancy on existing customer before transaction
+        /** @var User|null $existingCustomer */
+        $existingCustomer = User::where('email', $validated['customer_email'])->first();
+        if ($existingCustomer && $actor->isReseller() && ! $existingCustomer->isDescendantOf($actor) && $existingCustomer->id !== $actor->id) {
+            return response()->json([
+                'error' => [
+                    'code' => 'TENANCY_VIOLATION',
+                    'message' => 'Cannot assign account to a customer outside your reseller subtree.',
+                ],
+            ], 403);
         }
 
         // 2. Select package and check tenancy
@@ -84,24 +74,49 @@ class AccountController extends Controller
             }
         }
 
-        // 4. Create account in database with pending status
-        $account = Account::create([
-            'user_id' => $customer->id,
-            'package_id' => $package->id,
-            'server_id' => $serverId,
-            'linux_username' => $validated['username'],
-            'primary_domain' => $validated['domain'],
-            'status' => AccountStatus::PENDING,
-        ]);
+        // 4. Create customer (if needed), account, and primary domain atomically
+        [$account, $primaryDomain] = DB::transaction(function () use ($actor, $existingCustomer, $validated, $package, $serverId, $primaryDomains) {
+            $customer = $existingCustomer;
+            if (! $customer) {
+                $customer = User::create([
+                    'name' => $validated['customer_name'] ?? $validated['username'],
+                    'email' => $validated['customer_email'],
+                    'password' => Hash::make(Str::random(32)),
+                    'role' => UserRole::CUSTOMER,
+                    'parent_id' => $actor->isReseller() ? $actor->id : null,
+                    'email_verified_at' => now(),
+                ]);
+            }
+
+            $account = Account::create([
+                'user_id' => $customer->id,
+                'package_id' => $package->id,
+                'server_id' => $serverId,
+                'linux_username' => $validated['username'],
+                'primary_domain' => strtolower(trim($validated['domain'])),
+                'status' => AccountStatus::PENDING,
+            ]);
+
+            $primaryDomain = $primaryDomains->ensureForAccount($account);
+
+            return [$account, $primaryDomain];
+        });
 
         // 5. Enqueue asynchronous provisioning
         ProvisionAccount::dispatch($account);
+
+        $domainPayload = [
+            'id' => $primaryDomain->id,
+            'name' => $primaryDomain->domain,
+            'verification_status' => $primaryDomain->verification_status,
+        ];
 
         // 6. Fire webhook
         $webhooks->dispatch('account.created', [
             'account_id' => $account->id,
             'username' => $account->linux_username,
             'domain' => $account->primary_domain,
+            'primary_domain' => $domainPayload,
             'status' => $account->status->value,
             'package_id' => $package->id,
             'server_id' => $account->server_id,
@@ -112,6 +127,7 @@ class AccountController extends Controller
             'account_id' => $account->id,
             'username' => $account->linux_username,
             'domain' => $account->primary_domain,
+            'primary_domain' => $domainPayload,
             'message' => 'Account has been enqueued for asynchronous provisioning.',
         ], 202);
     }
@@ -122,7 +138,7 @@ class AccountController extends Controller
         $actor = $request->user();
 
         /** @var Account $account */
-        $account = Account::with(['package', 'server', 'user'])->findOrFail($id);
+        $account = Account::with(['package', 'server', 'user', 'primaryDomain'])->findOrFail($id);
 
         if (! $actor->can('view', $account)) {
             return response()->json([
@@ -133,10 +149,17 @@ class AccountController extends Controller
             ], 403);
         }
 
+        $primaryDomain = $account->primaryDomain;
+
         return response()->json([
             'id' => $account->id,
             'username' => $account->linux_username,
             'primary_domain' => $account->primary_domain,
+            'domain' => $primaryDomain ? [
+                'id' => $primaryDomain->id,
+                'name' => $primaryDomain->domain,
+                'verification_status' => $primaryDomain->verification_status,
+            ] : null,
             'status' => $account->status->value,
             'suspended_reason' => $account->suspended_reason,
             'owner' => [

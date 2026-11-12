@@ -10,6 +10,8 @@
         </x-slot:actions>
     </x-layout.page-header>
 
+    <x-domain-tabs :domain="$domain" active="ssl" />
+
     @if (session()->has('status'))
         <x-ui.chip variant="success" size="lg" class="w-full justify-start py-2.5 px-4 rounded-2xl">
             {{ session('status') }}

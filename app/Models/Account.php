@@ -142,6 +142,16 @@ class Account extends Model
     }
 
     /**
+     * Primary domain associated with this hosting account.
+     *
+     * @return HasOne<Domain, $this>
+     */
+    public function primaryDomain(): HasOne
+    {
+        return $this->hasOne(Domain::class)->where('type', \App\Enums\DomainType::PRIMARY);
+    }
+
+    /**
      * Secondary FTP / SFTP sub-accounts.
      *
      * @return HasMany<FtpAccount, $this>

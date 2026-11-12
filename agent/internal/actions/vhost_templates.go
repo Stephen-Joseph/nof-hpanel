@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -37,11 +39,21 @@ type VhostTemplateData struct {
 	WwwRedirectBlock   string
 	RedirectsBlock     string
 	ProtectedDirsBlock string
-	HpanelCustomInclude string
+	HpanelCustomInclude   string
 	HpanelHtaccessInclude string
+	CustomBlock           string
+	SocketPath            string
+	IsLaravelPublicRoot   bool
 }
 
-const nginxVhostTemplate = `# HPanel Virtual Host Configuration
+const (
+	ManagedRegionHeader = "# === HPANEL MANAGED: DO NOT EDIT (server_name, listen, ssl, root, logs, php socket, acme) ==="
+	CustomRegionStart   = "# === CUSTOM: EDITABLE ==="
+	CustomRegionEnd     = "# === END CUSTOM ==="
+)
+
+const nginxVhostTemplate = `# === HPANEL MANAGED: DO NOT EDIT (server_name, listen, ssl, root, logs, php socket, acme) ===
+# HPanel Virtual Host Configuration
 # Domain: {{.Domain}}
 # App Profile: {{.AppProfile}}
 # Managed atomically by panel-agent. Do not edit manually.
@@ -149,11 +161,11 @@ server {
     location = /robots.txt  { access_log off; log_not_found off; }
 
     location ~ \.php$ {
-        include fastcgi_params;
-        fastcgi_pass unix:/run/php/php{{.PHPVersion}}-fpm-{{.Username}}.sock;
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:{{.SocketPath}};
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
         fastcgi_param DOCUMENT_ROOT $realpath_root;
-        fastcgi_index index.php;
+        fastcgi_read_timeout 300;
         fastcgi_buffers 16 16k;
         fastcgi_buffer_size 32k;
     }
@@ -161,6 +173,20 @@ server {
     location ~ /\.(?!well-known).* {
         deny all;
     }
+{{if .IsLaravelPublicRoot}}
+    # Protect Laravel source directories and sensitive files
+    location ~* ^/(app|bootstrap|config|database|dumps|resources|routes|storage|tests|vendor|\.github|\.agents|node_modules)(/|$) {
+        deny all;
+    }
+
+    location ~* \.(env|lock|md|xml|yml|yaml|neon|ini|sh|sql|zip|tar|gz)$ {
+        deny all;
+    }
+
+    location ~* ^/(?!build/|assets/).*\.json$ {
+        deny all;
+    }
+{{end}}
 {{else if eq .AppProfile "wordpress"}}
     # Profile: WordPress
     location / {
@@ -178,7 +204,7 @@ server {
 
     location ~ \.php$ {
         include fastcgi_params;
-        fastcgi_pass unix:/run/php/php{{.PHPVersion}}-fpm-{{.Username}}.sock;
+        fastcgi_pass unix:{{.SocketPath}};
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         fastcgi_index index.php;
         fastcgi_buffers 16 16k;
@@ -210,7 +236,7 @@ server {
 
     location ~ \.php$ {
         include fastcgi_params;
-        fastcgi_pass unix:/run/php/php{{.PHPVersion}}-fpm-{{.Username}}.sock;
+        fastcgi_pass unix:{{.SocketPath}};
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         fastcgi_index index.php;
         fastcgi_buffers 16 16k;
@@ -227,6 +253,10 @@ server {
 
     # Include .htaccess converted configuration
     include {{if .HpanelHtaccessInclude}}{{.HpanelHtaccessInclude}}{{else}}/etc/nginx/hpanel.d/{{.Domain}}.htaccess.con[f]{{end}};
+
+    # === CUSTOM: EDITABLE ===
+{{.CustomBlock}}
+    # === END CUSTOM ===
 }
 `
 
@@ -347,6 +377,23 @@ func RenderDefaultVhostConfig() string {
 	return DefaultCatchAllVhostTemplate
 }
 
+// DetectLaravelRoot inspects /home/<username>/public_html for public/index.php or index.php.
+func DetectLaravelRoot(username, fallbackDocRoot string) (string, bool) {
+	if username == "" {
+		return fallbackDocRoot, strings.HasSuffix(fallbackDocRoot, "/public_html/public")
+	}
+	homeHtml := filepath.Join("/home", username, "public_html")
+	publicIndex := filepath.Join(homeHtml, "public", "index.php")
+	if _, err := os.Stat(publicIndex); err == nil {
+		return filepath.Join(homeHtml, "public"), true
+	}
+	rootIndex := filepath.Join(homeHtml, "index.php")
+	if _, err := os.Stat(rootIndex); err == nil {
+		return homeHtml, false
+	}
+	return fallbackDocRoot, strings.HasSuffix(fallbackDocRoot, "/public_html/public")
+}
+
 // RenderVhostConfig renders the full Nginx server block configuration.
 func RenderVhostConfig(data VhostTemplateData) (string, error) {
 	if data.PHPVersion == "" {
@@ -357,6 +404,12 @@ func RenderVhostConfig(data VhostTemplateData) (string, error) {
 	}
 	if data.DocumentRoot == "" && data.Username != "" {
 		data.DocumentRoot = fmt.Sprintf("/home/%s/public_html", data.Username)
+	}
+	if data.SocketPath == "" && data.Username != "" {
+		data.SocketPath = PhpFpmSocketPath(data.PHPVersion, data.Username)
+	}
+	if data.AppProfile == "laravel" && !data.IsLaravelPublicRoot && strings.HasSuffix(data.DocumentRoot, "/public_html/public") {
+		data.IsLaravelPublicRoot = true
 	}
 
 	bareDomain := strings.TrimPrefix(data.Domain, "www.")

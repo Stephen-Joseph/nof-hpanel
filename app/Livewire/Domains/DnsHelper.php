@@ -4,6 +4,7 @@ namespace App\Livewire\Domains;
 
 use App\Jobs\IssueSslCertificateJob;
 use App\Models\Domain;
+use App\Services\Dns\DnsResolverInterface;
 use App\Services\DomainVerificationResult;
 use App\Services\DomainVerificationService;
 use Illuminate\View\View;
@@ -68,12 +69,33 @@ class DnsHelper extends Component
         session()->flash('status', "SSL certificate request initiated for {$this->domain->domain}.");
     }
 
-    public function render(): View
+    public function render(DnsResolverInterface $resolver): View
     {
         $this->domain->refresh();
+        $edgeHost = (string) config('hpanel.edge_host', 'edge.nexorafox.in');
+
+        $edgeIps = [];
+        try {
+            $aRecords = $resolver->getRecords($edgeHost, DNS_A);
+            foreach ($aRecords as $record) {
+                if (! empty($record['ip'])) {
+                    $edgeIps[] = (string) $record['ip'];
+                }
+            }
+        } catch (\Throwable) {
+            $edgeIps = [];
+        }
+
+        if (empty($edgeIps)) {
+            $fallbackIp = config('hpanel.edge_fallback_ip') ?: $this->domain->account?->server?->public_ip;
+            if (! empty($fallbackIp)) {
+                $edgeIps[] = (string) $fallbackIp;
+            }
+        }
 
         return view('livewire.domains.dns-helper', [
-            'edgeHost' => config('hpanel.edge_host', 'edge.nexorafox.in'),
+            'edgeHost' => $edgeHost,
+            'edgeIps' => array_values(array_unique($edgeIps)),
             'txtHost' => $this->domain->getVerificationTxtHost(),
             'txtValue' => $this->domain->getVerificationTxtValue(),
         ]);

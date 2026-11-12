@@ -51,6 +51,7 @@ use Illuminate\Support\Carbon;
     'account_id',
     'domain',
     'type',
+    'is_primary',
     'document_root',
     'app_profile',
     'php_version',
@@ -80,6 +81,11 @@ class Domain extends Model
     protected static function booted(): void
     {
         static::creating(function (Domain $domain) {
+            $domain->domain = strtolower(trim($domain->domain));
+
+            if ($domain->is_primary === null) {
+                $domain->is_primary = $domain->type === DomainType::PRIMARY;
+            }
             if (empty($domain->verification_token)) {
                 $domain->verification_token = bin2hex(random_bytes(16));
             }
@@ -104,6 +110,7 @@ class Domain extends Model
     {
         return [
             'type' => DomainType::class,
+            'is_primary' => 'boolean',
             'app_profile' => AppProfile::class,
             'www_redirect' => WwwRedirect::class,
             'php_ini' => 'array',

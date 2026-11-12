@@ -5,6 +5,7 @@ namespace App\Livewire\Domains;
 use App\Enums\AppProfile;
 use App\Jobs\RemoveVhostJob;
 use App\Jobs\WriteVhostJob;
+use App\Models\Account;
 use App\Models\Domain;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -18,6 +19,8 @@ class DomainList extends Component
     public string $search = '';
 
     public string $typeFilter = '';
+
+    public string $accountFilter = '';
 
     public bool $showingProfileModal = false;
 
@@ -121,13 +124,15 @@ class DomainList extends Component
     {
         /** @var Domain $domain */
         $domain = Domain::with('account.server')->findOrFail($id);
-        $this->authorize('delete', $domain);
+        $this->authorize('view', $domain);
 
-        if ($domain->type->value === 'primary') {
+        if ($domain->is_primary || $domain->type->value === 'primary') {
             session()->flash('error', 'The primary domain of an account cannot be deleted. Terminate the account instead.');
 
             return;
         }
+
+        $this->authorize('delete', $domain);
 
         RemoveVhostJob::dispatch($domain->account->server, $domain->account, $domain->domain);
         $domain->delete();
@@ -150,14 +155,22 @@ class DomainList extends Component
             ->when($this->typeFilter !== '', function (Builder $query) {
                 $query->where('type', $this->typeFilter);
             })
+            ->when($this->accountFilter !== '', function (Builder $query) {
+                $query->where('account_id', (int) $this->accountFilter);
+            })
             ->orderBy('domain')
             ->get();
+
+        $accounts = ($user->isAdmin() || $user->isReseller())
+            ? Account::visibleTo($user)->orderBy('linux_username')->get()
+            : collect();
 
         $editingDomain = $this->editingDomainId ? Domain::find($this->editingDomainId) : null;
         $viewingHtaccessDomain = $this->viewingHtaccessDomainId ? Domain::with(['account.server'])->find($this->viewingHtaccessDomainId) : null;
 
         return view('livewire.domains.domain-list', [
             'domains' => $domains,
+            'accounts' => $accounts,
             'editingDomain' => $editingDomain,
             'viewingHtaccessDomain' => $viewingHtaccessDomain,
         ]);

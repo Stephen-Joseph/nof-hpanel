@@ -254,6 +254,78 @@ if [[ "$ACCOUNT_CREATED" -eq 1 ]]; then
 fi
 
 # -----------------------------------------------------------------------------
+# 6. Laravel Profile + PHP 8.4 End-to-End Smoke Test
+# -----------------------------------------------------------------------------
+LARAVEL_USER="smokelaravel"
+LARAVEL_DOMAIN="smokelaravel.test"
+LARAVEL_PHP="8.4"
+if [[ ! -x "/usr/sbin/php-fpm8.4" && ! -x "/usr/bin/php8.4" ]]; then
+  LARAVEL_PHP="$PHP_VER"
+fi
+
+echo ""
+echo "--> Running Laravel Profile + PHP ${LARAVEL_PHP} End-to-End Smoke Test..."
+
+LARAVEL_CREATE_PAYLOAD="{\"username\":\"${LARAVEL_USER}\",\"primary_domain\":\"${LARAVEL_DOMAIN}\",\"php_version\":\"${LARAVEL_PHP}\",\"storage_mb\":1024,\"inodes\":50000,\"php_workers\":5,\"php_memory_mb\":128}"
+LARAVEL_CREATED=0
+
+if $ARTISAN hpanel:agent-dispatch account.create --payload="$LARAVEL_CREATE_PAYLOAD" >/tmp/laravel_create.log 2>&1; then
+  LARAVEL_CREATED=1
+  record_result "laravel:account.create" "PASS" "account created (${LARAVEL_USER})"
+else
+  record_result "laravel:account.create" "FAIL" "account.create failed for ${LARAVEL_USER}"
+fi
+
+if [[ "$LARAVEL_CREATED" -eq 1 ]]; then
+  LARAVEL_ROOT="/home/${LARAVEL_USER}/public_html"
+  mkdir -p "${LARAVEL_ROOT}/public" "${LARAVEL_ROOT}/storage/logs" "${LARAVEL_ROOT}/bootstrap/cache"
+  touch "${LARAVEL_ROOT}/artisan"
+  echo "APP_KEY=base64:smoketest" > "${LARAVEL_ROOT}/.env"
+  cat > "${LARAVEL_ROOT}/public/index.php" << 'EOF'
+<?php
+file_put_contents(__DIR__ . '/../storage/logs/smoke.log', PHP_VERSION . "\n");
+echo "PHP_VERSION=" . PHP_VERSION;
+EOF
+  chown -R "${LARAVEL_USER}:${LARAVEL_USER}" "${LARAVEL_ROOT}"
+
+  # Apply Laravel permissions & switch to Laravel profile + PHP version
+  $ARTISAN hpanel:agent-dispatch php.set_version --payload="{\"domain\":\"${LARAVEL_DOMAIN}\",\"username\":\"${LARAVEL_USER}\",\"version\":\"${LARAVEL_PHP}\",\"document_root\":\"${LARAVEL_ROOT}\",\"app_profile\":\"laravel\"}" >/tmp/laravel_set_ver.log 2>&1 || true
+  $ARTISAN hpanel:agent-dispatch laravel.fix_permissions --payload="{\"domain\":\"${LARAVEL_DOMAIN}\",\"username\":\"${LARAVEL_USER}\"}" >/tmp/laravel_fix_perm.log 2>&1 || true
+
+  # Assert HTTP 200 through pool socket
+  LARAVEL_HTTP=$(curl -s -o /tmp/laravel_body.txt -w '%{http_code}' -H "Host: ${LARAVEL_DOMAIN}" http://127.0.0.1/ || true)
+  if [[ "$LARAVEL_HTTP" == "200" ]] && grep -q "PHP_VERSION=${LARAVEL_PHP}" /tmp/laravel_body.txt; then
+    record_result "laravel:http_200" "PASS" "HTTP 200 and PHP_VERSION=${LARAVEL_PHP} served via pool socket"
+  else
+    record_result "laravel:http_200" "FAIL" "HTTP=${LARAVEL_HTTP}, body=$(cat /tmp/laravel_body.txt 2>/dev/null)"
+  fi
+
+  # Assert log file exists and storage/logs is group www-data
+  if [[ -f "${LARAVEL_ROOT}/storage/logs/smoke.log" ]] && [[ "$(stat -c '%G' "${LARAVEL_ROOT}/storage/logs")" == "www-data" ]]; then
+    record_result "laravel:storage_log" "PASS" "smoke.log written and storage/logs group is www-data"
+  else
+    record_result "laravel:storage_log" "FAIL" "smoke.log missing or storage/logs group is not www-data"
+  fi
+
+  # Assert /.env returns 403 or 404
+  ENV_HTTP=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: ${LARAVEL_DOMAIN}" http://127.0.0.1/.env || true)
+  if [[ "$ENV_HTTP" == "403" || "$ENV_HTTP" == "404" ]]; then
+    record_result "laravel:dotenv_blocked" "PASS" "/.env returned HTTP ${ENV_HTTP}"
+  else
+    record_result "laravel:dotenv_blocked" "FAIL" "/.env returned HTTP ${ENV_HTTP}, expected 403 or 404"
+  fi
+
+  # Terminate throwaway Laravel account and verify cleanup
+  LARAVEL_TERM="{\"username\":\"${LARAVEL_USER}\",\"confirm_token\":\"TERMINATE-${LARAVEL_USER}\",\"take_backup\":false,\"domains\":[\"${LARAVEL_DOMAIN}\"]}"
+  $ARTISAN hpanel:agent-dispatch account.terminate --payload="$LARAVEL_TERM" >/tmp/laravel_term.log 2>&1 || true
+  if ! id "$LARAVEL_USER" >/dev/null 2>&1 && [[ ! -f "/etc/nginx/sites-enabled/${LARAVEL_DOMAIN}.conf" ]] && [[ ! -f "/etc/php/${LARAVEL_PHP}/fpm/pool.d/${LARAVEL_USER}.conf" ]] && [[ ! -d "/home/${LARAVEL_USER}" ]]; then
+    record_result "laravel:terminate" "PASS" "pool, vhost, and home files removed"
+  else
+    record_result "laravel:terminate" "FAIL" "leftover pool, vhost, or home directory after terminate"
+  fi
+fi
+
+# -----------------------------------------------------------------------------
 # Summary Table
 # -----------------------------------------------------------------------------
 echo ""

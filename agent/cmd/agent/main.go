@@ -114,6 +114,10 @@ func main() {
 	registry.Register(actions.NewNginxConfigTestAction())
 	registry.Register(actions.NewNginxCustomReadAction())
 	registry.Register(actions.NewNginxCustomWriteAction())
+	registry.Register(actions.NewNginxDomainReadAction())
+	registry.Register(actions.NewNginxDomainWriteAction())
+	registry.Register(actions.NewNginxDomainRestoreAction())
+	registry.Register(actions.NewNginxDomainResetAction())
 	registry.Register(actions.NewHtaccessSyncAction())
 
 	registry.Register(actions.NewSslIssueAction())
@@ -127,6 +131,10 @@ func main() {
 	registry.Register(actions.NewPhpListVersionsAction())
 	registry.Register(actions.NewPhpInstallVersionAction())
 	registry.Register(actions.NewPhpFpmStatusAction())
+	registry.Register(actions.NewPhpSetVersionAction())
+	registry.Register(actions.NewLaravelFixPermissionsAction())
+	registry.Register(actions.NewLaravelArtisanAction())
+	registry.Register(actions.NewLaravelDetectAction())
 
 	registry.Register(actions.NewFileListAction())
 	registry.Register(actions.NewFileReadAction())

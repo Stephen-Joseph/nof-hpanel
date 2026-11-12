@@ -13,6 +13,8 @@
         </x-slot:actions>
     </x-layout.page-header>
 
+    <x-domain-tabs :domain="$domain" active="redirects" />
+
     @if (session()->has('status'))
         <div class="mb-6 rounded-[20px] bg-emerald-500/10 border border-emerald-500/20 p-4 text-sm text-emerald-600 dark:text-emerald-400">
             {{ session('status') }}

@@ -11,12 +11,13 @@ import (
 )
 
 type PhpPoolWritePayload struct {
-	Username    string         `json:"username"`
-	Version     string         `json:"version"`
-	PmMode      string         `json:"pm_mode,omitempty"`
-	MaxChildren int            `json:"max_children,omitempty"`
-	MaxMemoryMB int            `json:"max_memory_mb,omitempty"`
-	Settings    PhpIniSettings `json:"settings,omitempty"`
+	Username           string         `json:"username"`
+	Version            string         `json:"version"`
+	PmMode             string         `json:"pm_mode,omitempty"`
+	MaxChildren        int            `json:"max_children,omitempty"`
+	MaxMemoryMB        int            `json:"max_memory_mb,omitempty"`
+	AllowExecFunctions bool           `json:"allow_exec_functions,omitempty"`
+	Settings           PhpIniSettings `json:"settings,omitempty"`
 }
 
 type PhpPoolWriteAction struct{}
@@ -67,19 +68,28 @@ func (a *PhpPoolWriteAction) Execute(ctx context.Context, payload []byte, dryRun
 		return &ActionResult{Success: false, Error: err.Error()}, err
 	}
 
-	if p.PmMode == "" {
-		p.PmMode = "ondemand"
-	}
 	if p.MaxChildren <= 0 {
 		p.MaxChildren = 5
 	}
+	if p.PmMode == "" {
+		if p.MaxChildren > 5 {
+			p.PmMode = "dynamic"
+		} else {
+			p.PmMode = "ondemand"
+		}
+	}
+	if p.Settings.MemoryLimit == "" && p.MaxMemoryMB > 0 {
+		p.Settings.MemoryLimit = fmt.Sprintf("%dM", p.MaxMemoryMB)
+	}
 
 	poolData := PhpPoolTemplateData{
-		Username:    p.Username,
-		Version:     p.Version,
-		PmMode:      p.PmMode,
-		MaxChildren: p.MaxChildren,
-		Settings:    p.Settings,
+		Username:           p.Username,
+		Version:            p.Version,
+		SocketPath:         PhpFpmSocketPath(p.Version, p.Username),
+		PmMode:             p.PmMode,
+		MaxChildren:        p.MaxChildren,
+		AllowExecFunctions: p.AllowExecFunctions,
+		Settings:           p.Settings,
 	}
 
 	configContent, err := RenderPhpPoolConfig(poolData)
@@ -106,7 +116,7 @@ func (a *PhpPoolWriteAction) Execute(ctx context.Context, payload []byte, dryRun
 				"username":     p.Username,
 				"version":      p.Version,
 				"pool_file":    targetFile,
-				"socket":       fmt.Sprintf("/run/php/php%s-fpm-%s.sock", p.Version, p.Username),
+				"socket":       PhpFpmSocketPath(p.Version, p.Username),
 				"config_bytes": len(configContent),
 				"dry_run":      true,
 			},

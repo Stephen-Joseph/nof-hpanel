@@ -11,8 +11,10 @@ use App\Models\Package;
 use App\Models\Server;
 use App\Models\User;
 use App\Services\AuditService;
+use App\Services\PrimaryDomainService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -122,7 +124,7 @@ class AccountCreate extends Component
         }
     }
 
-    public function save(AuditService $audit): RedirectResponse
+    public function save(AuditService $audit, PrimaryDomainService $primaryDomains): RedirectResponse
     {
         $this->authorize('create', Account::class);
 
@@ -149,16 +151,22 @@ class AccountCreate extends Component
             return redirect()->back();
         }
 
-        // Create the account row with pending status
-        $account = Account::create([
-            'user_id' => $validated['user_id'],
-            'package_id' => $validated['package_id'],
-            'server_id' => $validated['server_id'],
-            'linux_username' => $validated['linux_username'],
-            'primary_domain' => $validated['primary_domain'],
-            'status' => AccountStatus::PENDING,
-            'suspended_reason' => null,
-        ]);
+        // Create the account and its primary domain row atomically
+        $account = DB::transaction(function () use ($validated, $primaryDomains) {
+            $account = Account::create([
+                'user_id' => $validated['user_id'],
+                'package_id' => $validated['package_id'],
+                'server_id' => $validated['server_id'],
+                'linux_username' => $validated['linux_username'],
+                'primary_domain' => strtolower(trim($validated['primary_domain'])),
+                'status' => AccountStatus::PENDING,
+                'suspended_reason' => null,
+            ]);
+
+            $primaryDomains->ensureForAccount($account);
+
+            return $account;
+        });
 
         // Audit log
         $audit->log('account.created', $account, null, $account->toArray(), $actor);

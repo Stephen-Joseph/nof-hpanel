@@ -4,7 +4,6 @@ use App\Enums\DomainType;
 use App\Enums\ServerStatus;
 use App\Jobs\SwitchDomainPhpVersionJob;
 use App\Jobs\WritePhpPoolJob;
-use App\Jobs\WriteVhostJob;
 use App\Livewire\Domains\PhpManager;
 use App\Models\Account;
 use App\Models\Domain;
@@ -107,26 +106,24 @@ test('requesting memory limit exceeding package quota is rejected', function () 
     Queue::assertNothingPushed();
 });
 
-test('switch domain php version job invokes write php pool job and rewrites vhost', function () {
-    Queue::fake([WriteVhostJob::class]);
-
+test('switch domain php version job invokes php.set_version and updates domain', function () {
     $mockClient = Mockery::mock(AgentClient::class);
     $mockClient->shouldReceive('execute')
         ->once()
         ->withArgs(function ($server, $action, $payload) {
-            return $action === 'php.pool_write' &&
-                $payload['username'] === 'alicecorp' &&
+            return $action === 'php.set_version' &&
+                $payload['domain'] === 'alicecorp.com' &&
                 $payload['version'] === '8.4' &&
                 $payload['max_children'] === 8;
         })
         ->andReturn([
             'success' => true,
             'data' => [
-                'username' => 'alicecorp',
+                'domain' => 'alicecorp.com',
                 'version' => '8.4',
                 'socket' => '/run/php/php8.4-fpm-alicecorp.sock',
             ],
-            'logs' => ['Pool written successfully'],
+            'logs' => ['PHP version switched successfully'],
         ]);
 
     app()->instance(AgentClient::class, $mockClient);
@@ -141,10 +138,6 @@ test('switch domain php version job invokes write php pool job and rewrites vhos
     $this->domain1->refresh();
     expect($this->domain1->php_version)->toEqual('8.4')
         ->and($this->domain1->php_ini['memory_limit'])->toEqual('256M');
-
-    Queue::assertPushed(WriteVhostJob::class, function ($job) {
-        return $job->domain->id === $this->domain1->id;
-    });
 });
 
 test('write php pool job dispatches typed action to agent and logs execution', function () {

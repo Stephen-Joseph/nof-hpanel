@@ -202,6 +202,10 @@ Route::middleware('auth')->group(function () {
         return view('domains.create');
     })->middleware('can:create,'.Domain::class)->name('domains.create');
 
+    Route::get('/domains/{domain}', function (Domain $domain) {
+        return view('domains.dns', ['domain' => $domain]);
+    })->middleware('can:view,domain')->name('domains.show');
+
     Route::get('/domains/{domain}/redirects', function (Domain $domain) {
         return view('domains.redirects', ['domain' => $domain]);
     })->middleware('can:update,domain')->name('domains.redirects');
@@ -217,6 +221,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/domains/{domain}/php', function (Domain $domain) {
         return view('domains.php', ['domain' => $domain]);
     })->middleware('can:view,domain')->name('domains.php');
+
+    Route::get('/domains/{domain}/nginx', function (Domain $domain) {
+        return view('domains.nginx', ['domain' => $domain]);
+    })->middleware('can:update,domain')->name('domains.nginx');
 
     Route::get('/domains/{domain}/web-server', App\Livewire\Domains\WebServerSettings::class)
         ->middleware('can:update,domain')

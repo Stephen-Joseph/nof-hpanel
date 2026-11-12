@@ -40,27 +40,37 @@
             />
         </div>
 
-        <div class="w-full sm:w-48">
-            <x-ui.select name="typeFilter" wire:model.live="typeFilter">
-                <option value="">All Types</option>
-                <option value="primary">Primary</option>
-                <option value="addon">Addon</option>
-                <option value="subdomain">Subdomain</option>
-            </x-ui.select>
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            @if (auth()->user()->isAdmin() || auth()->user()->isReseller())
+                <div class="w-full sm:w-52">
+                    <x-ui.select name="accountFilter" wire:model.live="accountFilter">
+                        <option value="">All Accounts</option>
+                        @foreach ($accounts as $acc)
+                            <option value="{{ $acc->id }}">{{ $acc->linux_username }} ({{ $acc->primary_domain }})</option>
+                        @endforeach
+                    </x-ui.select>
+                </div>
+            @endif
+
+            <div class="w-full sm:w-48">
+                <x-ui.select name="typeFilter" wire:model.live="typeFilter">
+                    <option value="">All Types</option>
+                    <option value="primary">Primary</option>
+                    <option value="addon">Addon</option>
+                    <option value="subdomain">Subdomain</option>
+                </x-ui.select>
+            </div>
         </div>
     </div>
 
     <!-- Domains Table -->
-    <x-ui.table :headers="['Domain', 'Account / User', 'Type', 'Profile', 'Document Root', 'Actions']">
+    <x-ui.table :headers="['Domain', 'Account / User', 'Type', 'Profile', 'Document Root', 'Vhost', 'Actions']">
         @forelse ($domains as $d)
             <tr class="hover:bg-[var(--bg-shell)]/60 transition-colors">
                 <td class="px-6 py-4 whitespace-nowrap font-medium text-[var(--text)]">
                     <div class="flex items-center gap-1.5 flex-wrap">
-                        <a href="http://{{ $d->domain }}" target="_blank" rel="noopener" class="hover:text-blue-600 dark:hover:text-blue-400 font-semibold flex items-center gap-1">
+                        <a href="{{ route('domains.show', $d) }}" class="hover:text-blue-600 dark:hover:text-blue-400 font-semibold flex items-center gap-1">
                             {{ $d->domain }}
-                            <svg class="w-3.5 h-3.5 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
                         </a>
                         @if($d->verification_status === 'verified')
                             <a href="{{ route('domains.dns', $d) }}" title="DNS Verified">
@@ -119,6 +129,13 @@
                 <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-[var(--text-muted)] truncate max-w-xs">
                     {{ $d->document_root }}
                 </td>
+                <td class="px-6 py-4 whitespace-nowrap text-xs">
+                    @if($d->is_active)
+                        <x-ui.chip variant="success" size="xs" dot>Active</x-ui.chip>
+                    @else
+                        <x-ui.chip variant="neutral" size="xs" dot>Inactive</x-ui.chip>
+                    @endif
+                </td>
                 <td class="px-6 py-4 whitespace-nowrap text-right text-xs">
                     <div class="flex items-center justify-end gap-1.5">
                         <x-ui.button variant="secondary" size="xs" wire:click="openProfileModal({{ $d->id }})" title="Change App Profile">
@@ -133,7 +150,7 @@
                         <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.php', $d) }}'">
                             PHP
                         </x-ui.button>
-                        <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.web-server', $d) }}'" title="Web Server / Nginx Configuration">
+                        <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.nginx', $d) }}'" title="Nginx Configuration">
                             Nginx
                         </x-ui.button>
                         <x-ui.button variant="outline" size="xs" wire:click="openHtaccessModal({{ $d->id }})" title="Apache Rules (.htaccess) Compatibility">
