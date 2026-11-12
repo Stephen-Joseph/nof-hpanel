@@ -340,3 +340,74 @@ it('denies cross-tenant nginx config reads and writes and audits saves without s
     expect($audit)->not->toBeNull();
     expect(json_encode($audit->new_values))->not->toContain('gzip on;');
 });
+
+test('admin can edit full per-domain vhost in advanced mode and non-admin is forbidden', function () {
+    $account = Account::factory()->create([
+        'user_id' => $this->customer1->id,
+        'server_id' => $this->server->id,
+        'package_id' => $this->package->id,
+        'linux_username' => 'adminvhost',
+        'primary_domain' => 'adminvhost.example.com',
+    ]);
+    $domain = Domain::factory()->create([
+        'account_id' => $account->id,
+        'domain' => 'adminvhost.example.com',
+    ]);
+
+    $admin = User::factory()->admin()->create();
+    RateLimiter::clear('nginx-config-save:'.$admin->id);
+    RateLimiter::clear('nginx-config-save:'.$this->customer1->id);
+
+    $fullVhost = "server {\n    listen 80;\n    server_name adminvhost.example.com;\n    root /home/adminvhost/public_html;\n}";
+
+    $mockClient = Mockery::mock(AgentClient::class);
+    $mockClient->shouldReceive('execute')
+        ->withArgs(fn ($srv, $action) => $action === 'nginx.domain.read')
+        ->andReturn([
+            'success' => true,
+            'data' => [
+                'exists' => true,
+                'content' => $fullVhost,
+                'custom_block' => '',
+                'lines' => [
+                    ['line' => 1, 'text' => 'server {', 'locked' => true],
+                ],
+                'backups' => [],
+            ],
+            'logs' => [],
+        ]);
+    $mockClient->shouldReceive('execute')
+        ->withArgs(function ($srv, $action, $payload) {
+            return $action === 'nginx.domain.write'
+                && ($payload['advanced_mode'] ?? false) === true
+                && str_contains($payload['full_content'] ?? '', 'client_max_body_size 512M;');
+        })
+        ->once()
+        ->andReturn([
+            'success' => true,
+            'data' => [
+                'nginx_test_output' => 'nginx: syntax is ok',
+                'backup_id' => 'adminvhost.example.com.20261112T100000Z',
+            ],
+            'logs' => [],
+        ]);
+    $this->app->instance(AgentClient::class, $mockClient);
+
+    // Non-admin cannot use advancedMode
+    Livewire::actingAs($this->customer1)
+        ->test(DomainNginxConfig::class, ['domain' => $domain])
+        ->set('advancedMode', true)
+        ->set('advancedConfirmDomain', 'adminvhost.example.com')
+        ->set('fullContent', $fullVhost)
+        ->call('saveConfig')
+        ->assertForbidden();
+
+    // Admin can edit full vhost in advancedMode after confirming domain name
+    Livewire::actingAs($admin)
+        ->test(DomainNginxConfig::class, ['domain' => $domain])
+        ->set('advancedMode', true)
+        ->set('advancedConfirmDomain', 'adminvhost.example.com')
+        ->set('fullContent', $fullVhost."\n# client_max_body_size 512M;")
+        ->call('saveConfig')
+        ->assertSet('statusMessage', 'Nginx configuration validated with nginx -t, saved, and reloaded.');
+});

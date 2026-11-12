@@ -118,6 +118,10 @@ func main() {
 	registry.Register(actions.NewNginxDomainWriteAction())
 	registry.Register(actions.NewNginxDomainRestoreAction())
 	registry.Register(actions.NewNginxDomainResetAction())
+	registry.Register(actions.NewNginxServerListAction())
+	registry.Register(actions.NewNginxServerReadAction())
+	registry.Register(actions.NewNginxServerWriteAction())
+	registry.Register(actions.NewNginxServerRestoreAction())
 	registry.Register(actions.NewHtaccessSyncAction())
 
 	registry.Register(actions.NewSslIssueAction())

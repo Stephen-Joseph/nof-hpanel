@@ -183,13 +183,17 @@ func validateAdvancedModeContent(content string, username string) error {
 }
 
 func applyAndTestNginxDomainConfig(ctx context.Context, executor commandExecutor, availPath string, newContent []byte, backupPath string, isLinux bool) (string, error) {
-	tempFile, err := CreateConfigTemp(availPath, newContent, 0640)
+	return applyAndTestNginxConfig(ctx, executor, availPath, newContent, backupPath, 0640, isLinux)
+}
+
+func applyAndTestNginxConfig(ctx context.Context, executor commandExecutor, availPath string, newContent []byte, backupPath string, mode os.FileMode, isLinux bool) (string, error) {
+	tempFile, err := CreateConfigTemp(availPath, newContent, mode)
 	if err != nil {
 		return "", fmt.Errorf("creating temp config: %w", err)
 	}
 	defer os.Remove(tempFile)
 
-	if err := CommitConfigFile(tempFile, availPath, 0640); err != nil {
+	if err := CommitConfigFile(tempFile, availPath, mode); err != nil {
 		return "", fmt.Errorf("committing config: %w", err)
 	}
 
@@ -204,8 +208,8 @@ func applyAndTestNginxDomainConfig(ctx context.Context, executor commandExecutor
 		if err != nil {
 			if backupPath != "" {
 				if prevData, rErr := os.ReadFile(backupPath); rErr == nil {
-					if rbTmp, tErr := CreateConfigTemp(availPath, prevData, 0640); tErr == nil {
-						_ = CommitConfigFile(rbTmp, availPath, 0640)
+					if rbTmp, tErr := CreateConfigTemp(availPath, prevData, mode); tErr == nil {
+						_ = CommitConfigFile(rbTmp, availPath, mode)
 						_ = os.Remove(rbTmp)
 					}
 				}
@@ -218,8 +222,8 @@ func applyAndTestNginxDomainConfig(ctx context.Context, executor commandExecutor
 		if err := executor.Run(ctx, "systemctl", "reload", "nginx"); err != nil {
 			if backupPath != "" {
 				if prevData, rErr := os.ReadFile(backupPath); rErr == nil {
-					if rbTmp, tErr := CreateConfigTemp(availPath, prevData, 0640); tErr == nil {
-						_ = CommitConfigFile(rbTmp, availPath, 0640)
+					if rbTmp, tErr := CreateConfigTemp(availPath, prevData, mode); tErr == nil {
+						_ = CommitConfigFile(rbTmp, availPath, mode)
 						_ = os.Remove(rbTmp)
 					}
 				}
