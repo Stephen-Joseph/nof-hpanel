@@ -19,6 +19,7 @@ use Illuminate\Support\Carbon;
  * @property string $private_ip
  * @property string|null $public_ip
  * @property string $agent_url
+ * @property string|null $agent_hmac_secret
  * @property ServerStatus $status
  * @property string|null $agent_public_cert_fingerprint
  * @property int $max_accounts
@@ -38,6 +39,7 @@ use Illuminate\Support\Carbon;
     'private_ip',
     'public_ip',
     'agent_url',
+    'agent_hmac_secret',
     'status',
     'agent_public_cert_fingerprint',
     'max_accounts',
@@ -61,6 +63,7 @@ class Server extends Model
     {
         return [
             'status' => ServerStatus::class,
+            'agent_hmac_secret' => 'encrypted',
             'max_accounts' => 'integer',
             'cpu_cores' => 'integer',
             'memory_mb' => 'integer',

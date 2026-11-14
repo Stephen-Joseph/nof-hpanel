@@ -97,19 +97,68 @@
     <!-- Node Enrollment Modal -->
     @if ($showEnrollModal)
         <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <div class="bg-card border border-border rounded-[24px] max-w-lg w-full p-6 shadow-2xl">
+            <div class="bg-card border border-border rounded-[24px] max-w-lg w-full p-6 shadow-2xl" @if($generatedToken) wire:poll.3s @endif>
                 <h3 class="text-lg font-bold text-main mb-1">Enroll Server Node</h3>
-                <p class="text-xs text-muted mb-4">Generate a 24-hour one-time enrollment token to automatically configure the Go agent on a target Ubuntu/Debian server.</p>
+                <p class="text-xs text-muted mb-4">Generate a 60-minute one-time enrollment token to automatically configure the Go agent on a target Ubuntu/Debian server.</p>
 
                 @if ($generatedToken)
-                    <div class="space-y-4">
+                    <div class="space-y-4" x-data="{
+                        copied: false,
+                        expiresAt: new Date('{{ $tokenExpiresAt }}').getTime(),
+                        remaining: '',
+                        updateCountdown() {
+                            const now = new Date().getTime();
+                            const diff = Math.max(0, Math.floor((this.expiresAt - now) / 1000));
+                            const m = Math.floor(diff / 60);
+                            const s = diff % 60;
+                            this.remaining = `${m}m ${s < 10 ? '0' : ''}${s}s`;
+                        }
+                    }" x-init="updateCountdown(); setInterval(() => updateCountdown(), 1000)">
                         <div class="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-[14px] text-xs text-emerald-600 dark:text-emerald-400">
                             Token generated successfully! Run the command below on your remote server terminal as root.
                         </div>
 
+                        <!-- Status & Expiry Badge row -->
+                        <div class="flex items-center justify-between p-3 rounded-[14px] bg-shell border border-border text-xs">
+                            <div class="flex items-center gap-2">
+                                <span class="text-muted font-medium">Node Status:</span>
+                                @if ($enrollmentState === 'Active')
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                                        ● Active
+                                    </span>
+                                @elseif ($enrollmentState === 'Enrolled')
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/30">
+                                        ● Enrolled (Verifying health...)
+                                    </span>
+                                @else
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                                        ● Waiting for node...
+                                    </span>
+                                @endif
+                            </div>
+                            <div class="text-[11px] text-muted">
+                                Expires in: <span class="font-mono font-semibold text-main" x-text="remaining"></span>
+                            </div>
+                        </div>
+
                         <div>
-                            <label class="block text-xs font-medium text-muted mb-1.5">One-Line Automated Setup Command</label>
-                            <textarea readonly rows="3" class="block w-full px-3.5 py-2.5 rounded-[14px] bg-shell border border-border text-primary-500 font-mono text-[11px] select-all outline-hidden">{{ $enrollInstallCommand }}</textarea>
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label class="block text-xs font-medium text-muted">One-Line Automated Setup Command</label>
+                                <button
+                                    type="button"
+                                    class="text-xs text-primary-500 hover:text-primary-600 font-medium inline-flex items-center gap-1"
+                                    x-on:click="navigator.clipboard.writeText($refs.cmdText.value); copied = true; setTimeout(() => copied = false, 2500)"
+                                >
+                                    <span x-show="!copied">Copy command</span>
+                                    <span x-show="copied" class="text-emerald-500 font-semibold">✓ Copied!</span>
+                                </button>
+                            </div>
+                            <textarea
+                                x-ref="cmdText"
+                                readonly
+                                rows="3"
+                                class="block w-full px-3.5 py-2.5 rounded-[14px] bg-shell border border-border text-primary-500 font-mono text-[11px] select-all outline-hidden cursor-pointer"
+                            >{{ $enrollInstallCommand }}</textarea>
                         </div>
 
                         <div class="flex justify-end pt-2">

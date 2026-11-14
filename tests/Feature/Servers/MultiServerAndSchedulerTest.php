@@ -133,6 +133,15 @@ test('server enrollment api registers new node with valid one-time token', funct
         'expires_at' => now()->addHours(24),
     ]);
 
+    $mockClient = Mockery::mock(AgentClient::class);
+    $mockClient->shouldReceive('health')
+        ->once()
+        ->andReturn([
+            'success' => true,
+            'data' => ['status' => 'ok'],
+        ]);
+    $this->app->instance(AgentClient::class, $mockClient);
+
     $response = $this->postJson(route('api.v1.servers.enroll'), [
         'token' => $tokenStr,
         'hostname' => 'fra01.example.com',
@@ -171,7 +180,7 @@ test('server enrollment api registers new node with valid one-time token', funct
         'agent_url' => 'https://10.0.3.2:8443',
     ]);
 
-    $retry->assertStatus(422)
+    $retry->assertStatus(403)
         ->assertJson(['error' => ['code' => 'INVALID_TOKEN']]);
 });
 

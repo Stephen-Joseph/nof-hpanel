@@ -91,7 +91,9 @@ class AgentClient
         $requestId ??= (string) Str::uuid();
         $timestamp = time();
         $nonce = bin2hex(random_bytes(16));
-        $secret = (string) config('services.agent.secret', '');
+        $secret = ! empty($server->agent_hmac_secret)
+            ? (string) $server->agent_hmac_secret
+            : (string) config('services.agent.secret', '');
         $defaultSecret = 'test-agent-secret-key-change-me';
 
         if (app()->environment('production') && ($secret === '' || hash_equals($defaultSecret, $secret))) {

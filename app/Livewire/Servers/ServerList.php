@@ -24,6 +24,10 @@ class ServerList extends Component
 
     public string $generatedToken = '';
 
+    public ?int $generatedTokenId = null;
+
+    public ?string $tokenExpiresAt = null;
+
     public string $enrollInstallCommand = '';
 
     // SFTP live diagnostic
@@ -53,10 +57,9 @@ class ServerList extends Component
         $this->authorize('update', $server);
 
         $newStatus = $server->status === ServerStatus::ACTIVE ? ServerStatus::DRAINING : ServerStatus::ACTIVE;
-        $oldStatus = $server->status;
 
+        $audit->log('server.status_change', $server, ['status' => $server->status->value], ['status' => $newStatus->value], $user);
         $server->update(['status' => $newStatus]);
-        $audit->log('server.status_changed', $server, ['status' => $oldStatus->value], ['status' => $newStatus->value], $user);
 
         session()->flash('status', "Server {$server->name} status set to {$newStatus->label()}.");
     }
@@ -66,6 +69,8 @@ class ServerList extends Component
         $this->enrollServerName = '';
         $this->enrollServerGroupId = null;
         $this->generatedToken = '';
+        $this->generatedTokenId = null;
+        $this->tokenExpiresAt = null;
         $this->enrollInstallCommand = '';
         $this->showEnrollModal = true;
     }
@@ -81,24 +86,62 @@ class ServerList extends Component
         $user = Auth::user();
 
         $tokenStr = Str::random(64);
+        $expiresAt = now()->addMinutes(60);
 
-        ServerEnrollmentToken::create([
-            'token' => $tokenStr,
+        $tokenRecord = ServerEnrollmentToken::create([
+            'token_hash' => ServerEnrollmentToken::hashToken($tokenStr),
+            'token' => null,
             'server_name' => trim($this->enrollServerName),
             'server_group_id' => $this->enrollServerGroupId,
             'created_by' => $user->id,
-            'expires_at' => now()->addHours(24),
+            'expires_at' => $expiresAt,
         ]);
 
         $this->generatedToken = $tokenStr;
+        $this->generatedTokenId = $tokenRecord->id;
+        $this->tokenExpiresAt = $expiresAt->toIso8601String();
+
+        $panelUrl = rtrim((string) config('app.url'), '/');
         $this->enrollInstallCommand = sprintf(
-            'curl -sSL %s/deploy/enroll.sh | sudo bash -s -- --token %s --panel %s',
-            config('app.url'),
+            'curl -fsSL %s/deploy/install-node.sh | sudo bash -s -- --token %s --panel %s',
+            $panelUrl,
             $tokenStr,
-            config('app.url')
+            $panelUrl
         );
 
-        session()->flash('enroll_success', 'One-time enrollment token generated. Valid for 24 hours.');
+        session()->flash('enroll_success', 'One-time enrollment token generated. Valid for 60 minutes.');
+    }
+
+    /**
+     * Poll the enrollment status of the active token.
+     * Returns 'Waiting', 'Enrolled', or 'Active'.
+     */
+    public function getEnrollmentStateProperty(): string
+    {
+        if (! $this->generatedTokenId) {
+            return 'Waiting';
+        }
+
+        /** @var ServerEnrollmentToken|null $token */
+        $token = ServerEnrollmentToken::find($this->generatedTokenId);
+        if (! $token || ! $token->used_at) {
+            return 'Waiting';
+        }
+
+        // Look for the server matching this token's name and created around or after token creation
+        $server = Server::where('name', $token->server_name)
+            ->latest('id')
+            ->first();
+
+        if (! $server) {
+            return 'Enrolled';
+        }
+
+        if ($server->status === ServerStatus::ACTIVE) {
+            return 'Active';
+        }
+
+        return 'Enrolled';
     }
 
     public function deleteServer(int $id, AuditService $audit): void
@@ -184,7 +227,7 @@ class ServerList extends Component
                 $this->sftpDiagnosticError = $res['error'] ?? 'Failed to evaluate sshd settings.';
             }
         } catch (\Throwable $e) {
-            $this->sftpDiagnosticError = 'Diagnostic execution failed: ' . $e->getMessage();
+            $this->sftpDiagnosticError = 'Diagnostic execution failed: '.$e->getMessage();
         }
     }
 
@@ -202,6 +245,7 @@ class ServerList extends Component
         return view('livewire.servers.server-list', [
             'servers' => $servers,
             'serverGroups' => $serverGroups,
+            'enrollmentState' => $this->enrollmentState,
         ]);
     }
 }

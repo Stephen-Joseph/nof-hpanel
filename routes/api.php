@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\GitWebhookController;
 use App\Http\Controllers\Api\ServerEnrollmentController;
+use App\Http\Controllers\Api\ServerHealthCheckVerificationController;
 use App\Http\Controllers\Api\V1\AccountController;
 use App\Http\Controllers\Api\V1\DomainController;
 use App\Http\Controllers\Api\V1\HealthController;
@@ -18,6 +19,10 @@ Route::prefix('v1')->group(function () {
     Route::post('/servers/enroll', ServerEnrollmentController::class)
         ->middleware('throttle:5,1')
         ->name('api.v1.servers.enroll');
+
+    Route::post('/servers/verify-health', ServerHealthCheckVerificationController::class)
+        ->middleware('throttle:15,1')
+        ->name('api.v1.servers.verify-health');
 });
 
 Route::prefix('v1')->middleware(['throttle:60,1', 'api.auth', 'api.idempotency'])->group(function () {

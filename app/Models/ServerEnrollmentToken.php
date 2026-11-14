@@ -8,6 +8,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
+ * @property string|null $token_hash
  * @property string $token
  * @property string $server_name
  * @property int|null $server_group_id
@@ -26,6 +27,7 @@ class ServerEnrollmentToken extends Model
      * @var list<string>
      */
     protected $fillable = [
+        'token_hash',
         'token',
         'server_name',
         'server_group_id',
@@ -57,6 +59,26 @@ class ServerEnrollmentToken extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Hash raw token using SHA-256 for secure storage.
+     */
+    public static function hashToken(string $rawToken): string
+    {
+        return hash('sha256', $rawToken);
+    }
+
+    /**
+     * Find a valid token by raw token value (checking hash or legacy plain token).
+     */
+    public static function findByRawToken(string $rawToken): ?self
+    {
+        $hash = self::hashToken($rawToken);
+
+        return self::where('token_hash', $hash)
+            ->orWhere('token', $rawToken)
+            ->first();
     }
 
     /**

@@ -40,7 +40,8 @@ return new class extends Migration
 
         Schema::create('server_enrollment_tokens', function (Blueprint $table) {
             $table->id();
-            $table->string('token', 64)->unique();
+            $table->string('token', 64)->nullable()->unique();
+            $table->string('token_hash', 64)->nullable()->unique();
             $table->string('server_name');
             $table->foreignId('server_group_id')->nullable()->constrained('server_groups')->nullOnDelete();
             $table->foreignId('created_by')->constrained('users')->cascadeOnDelete();

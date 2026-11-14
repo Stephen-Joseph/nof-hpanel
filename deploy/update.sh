@@ -82,6 +82,7 @@ execute() {
 }
 
 # Error handler for automatic rollback
+# shellcheck disable=SC2317
 handle_error() {
     local exit_code=$?
     local line_no=$1
@@ -94,7 +95,7 @@ handle_error() {
 
     if [ "$DRY_RUN" = true ]; then
         log "[DRY-RUN] Would perform automatic rollback to commit '${CURRENT_COMMIT}'"
-        return $exit_code
+        return "$exit_code"
     fi
 
     # Perform automated rollback
@@ -134,7 +135,7 @@ handle_error() {
     rm -f "${TRIGGER_FILE}" 2>/dev/null || true
 
     log "Automatic rollback completed. System state restored to '${CURRENT_COMMIT}'."
-    exit $exit_code
+    exit "$exit_code"
 }
 
 trap 'handle_error $LINENO' ERR
@@ -171,6 +172,7 @@ if [ -f "${TRIGGER_FILE}" ]; then
     TRIGGER_ACTION=$(grep -o '"action"[^,]*' "${TRIGGER_FILE}" | head -1 | cut -d'"' -f4 || echo "deploy")
     TRIGGER_COMMIT=$(grep -o '"commit_sha"[^,]*' "${TRIGGER_FILE}" | head -1 | cut -d'"' -f4 || echo "")
     TRIGGER_DELIVERY=$(grep -o '"delivery_id"[^,]*' "${TRIGGER_FILE}" | head -1 | cut -d'"' -f4 || echo "")
+    log "Trigger details: action=${TRIGGER_ACTION}, commit=${TRIGGER_COMMIT:-HEAD}, delivery=${TRIGGER_DELIVERY:-none}"
     if [ "$TRIGGER_ACTION" = "rollback" ]; then
         IS_ROLLBACK=true
         TARGET_SHA=$(grep -o '"target_sha"[^,]*' "${TRIGGER_FILE}" | head -1 | cut -d'"' -f4 || echo "")
@@ -363,12 +365,16 @@ if [ "$DRY_RUN" = false ]; then
         log "Installing agent binary to ${AGENT_BIN}..."
         install -m 0755 "${AGENT_SRC_BUILD}/panel-agent" "${AGENT_BIN}"
         ln -sf "${AGENT_BIN}" /usr/local/bin/hpanel-agent
+
+        log "Compiling agent distribution binary for remote nodes (hpanel:build-agent)..."
+        ${PHP_BIN} artisan hpanel:build-agent
     else
         log "Warning: agent/ directory not found in repository. Skipping agent build."
     fi
 else
     log "[DRY-RUN] Would test and build Go agent from agent/ into ${AGENT_SRC_BUILD}/panel-agent"
     log "[DRY-RUN] Would install agent binary to ${AGENT_BIN}"
+    log "[DRY-RUN] Would execute ${PHP_BIN} artisan hpanel:build-agent"
 fi
 
 # 14. Restart services and perform health check

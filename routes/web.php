@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\DatabaseSsoController;
+use App\Http\Controllers\DeployScriptController;
 use App\Http\Controllers\Internal\GitHubDeployWebhookController;
 use App\Http\Controllers\LogDownloadController;
 use App\Models\Account;
@@ -277,4 +278,11 @@ Route::post('/internal/deploy/github', GitHubDeployWebhookController::class)
     ])
     ->middleware('throttle:30,1')
     ->name('internal.deploy.github');
+
+// Public Deploy Scripts (Rate limited to 30 req/min per IP, nosniff, no-store)
+Route::get('/deploy/{script}', DeployScriptController::class)
+    ->middleware('throttle:30,1')
+    ->where('script', '.*')
+    ->name('deploy.script');
+
 
