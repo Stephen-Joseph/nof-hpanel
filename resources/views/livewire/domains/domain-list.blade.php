@@ -65,42 +65,42 @@
 
     <!-- Domains Table -->
     <x-ui.table :headers="['Domain', 'Account / User', 'Type', 'Profile', 'Document Root', 'Vhost', 'Actions']">
-        @forelse ($domains as $d)
-            <tr class="hover:bg-[var(--bg-shell)]/60 transition-colors">
+        @forelse ($domains as $domain)
+            <tr wire:key="domain-{{ $domain->id }}" class="hover:bg-[var(--bg-shell)]/60 transition-colors">
                 <td class="px-6 py-4 whitespace-nowrap font-medium text-[var(--text)]">
                     <div class="flex items-center gap-1.5 flex-wrap">
-                        <a href="{{ route('domains.show', $d) }}" class="hover:text-blue-600 dark:hover:text-blue-400 font-semibold flex items-center gap-1">
-                            {{ $d->domain }}
+                        <a href="{{ route('domains.show', $domain) }}" class="hover:text-blue-600 dark:hover:text-blue-400 font-semibold flex items-center gap-1">
+                            {{ $domain->domain }}
                         </a>
-                        @if($d->verification_status === 'verified')
-                            <a href="{{ route('domains.dns', $d) }}" title="DNS Verified">
+                        @if($domain->verification_status === 'verified')
+                            <a href="{{ route('domains.dns', $domain) }}" title="DNS Verified">
                                 <x-ui.chip variant="success" size="xs" dot>Verified</x-ui.chip>
                             </a>
-                        @elseif($d->verification_status === 'failed')
-                            <a href="{{ route('domains.dns', $d) }}" title="DNS Failed">
+                        @elseif($domain->verification_status === 'failed')
+                            <a href="{{ route('domains.dns', $domain) }}" title="DNS Failed">
                                 <x-ui.chip variant="danger" size="xs" dot>DNS Failed</x-ui.chip>
                             </a>
                         @else
-                            <a href="{{ route('domains.dns', $d) }}" title="DNS Pending Verification">
+                            <a href="{{ route('domains.dns', $domain) }}" title="DNS Pending Verification">
                                 <x-ui.chip variant="warning" size="xs" dot>Pending DNS</x-ui.chip>
                             </a>
                         @endif
 
-                        @if($d->ssl_status === 'active')
+                        @if($domain->ssl_status === 'active')
                             <x-ui.chip variant="success" size="xs">SSL</x-ui.chip>
-                        @elseif($d->ssl_status === 'pending')
+                        @elseif($domain->ssl_status === 'pending')
                             <x-ui.chip variant="warning" size="xs">SSL...</x-ui.chip>
-                        @elseif($d->force_https)
+                        @elseif($domain->force_https)
                             <x-ui.chip variant="success" size="xs" dot>HTTPS</x-ui.chip>
                         @endif
                     </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-[var(--text-muted)]">
-                    {{ $d->account->linux_username }}
+                    {{ $domain->account->linux_username }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                     @php
-                        $chipVariant = match($d->type->value) {
+                        $chipVariant = match($domain->type->value) {
                             'primary' => 'primary',
                             'addon' => 'success',
                             'subdomain' => 'warning',
@@ -108,29 +108,29 @@
                         };
                     @endphp
                     <x-ui.chip :variant="$chipVariant" size="sm">
-                        {{ $d->type->label() }}
+                        {{ $domain->type->label() }}
                     </x-ui.chip>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-xs">
                     <div class="flex items-center gap-2">
                         <select
-                            wire:change="changeAppProfile({{ $d->id }}, $event.target.value)"
+                            wire:change="changeAppProfile({{ $domain->id }}, $event.target.value)"
                             class="text-xs rounded-xl border border-[var(--border)] bg-[var(--bg-shell)] text-[var(--text)] px-2.5 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-sans cursor-pointer"
                             title="Change Application Profile"
                         >
-                            <option value="php-generic" {{ $d->app_profile->value === 'php-generic' ? 'selected' : '' }}>php-generic</option>
-                            <option value="laravel" {{ $d->app_profile->value === 'laravel' ? 'selected' : '' }}>laravel</option>
-                            <option value="wordpress" {{ $d->app_profile->value === 'wordpress' ? 'selected' : '' }}>wordpress</option>
-                            <option value="static-spa" {{ $d->app_profile->value === 'static-spa' ? 'selected' : '' }}>static-spa</option>
+                            <option value="php-generic" {{ $domain->app_profile->value === 'php-generic' ? 'selected' : '' }}>php-generic</option>
+                            <option value="laravel" {{ $domain->app_profile->value === 'laravel' ? 'selected' : '' }}>laravel</option>
+                            <option value="wordpress" {{ $domain->app_profile->value === 'wordpress' ? 'selected' : '' }}>wordpress</option>
+                            <option value="static-spa" {{ $domain->app_profile->value === 'static-spa' ? 'selected' : '' }}>static-spa</option>
                         </select>
-                        <span class="text-[var(--text-muted)] font-mono text-[11px]">(PHP {{ $d->php_version }})</span>
+                        <span class="text-[var(--text-muted)] font-mono text-[11px]">(PHP {{ $domain->php_version }})</span>
                     </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-[var(--text-muted)] truncate max-w-xs">
-                    {{ $d->document_root }}
+                    {{ $domain->document_root }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-xs">
-                    @if($d->is_active)
+                    @if($domain->is_active)
                         <x-ui.chip variant="success" size="xs" dot>Active</x-ui.chip>
                     @else
                         <x-ui.chip variant="neutral" size="xs" dot>Inactive</x-ui.chip>
@@ -138,32 +138,38 @@
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-right text-xs">
                     <div class="flex items-center justify-end gap-1.5">
-                        <x-ui.button variant="secondary" size="xs" wire:click="openProfileModal({{ $d->id }})" title="Change App Profile">
+                        <x-ui.button variant="secondary" size="xs" wire:click="verify({{ $domain->id }})" title="Verify DNS Ownership &amp; Routing">
+                            Verify
+                        </x-ui.button>
+                        <x-ui.button variant="secondary" size="xs" wire:click="enableSsl({{ $domain->id }})" title="Request / Enable SSL Certificate">
+                            Enable SSL
+                        </x-ui.button>
+                        <x-ui.button variant="outline" size="xs" wire:click="openProfileModal({{ $domain->id }})" title="Change App Profile">
                             Profile
                         </x-ui.button>
-                        <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.redirects', $d) }}'">
+                        <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.redirects', $domain) }}'">
                             Redirects
                         </x-ui.button>
-                        <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.ssl', $d) }}'">
+                        <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.ssl', $domain) }}'">
                             SSL
                         </x-ui.button>
-                        <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.php', $d) }}'">
+                        <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.php', $domain) }}'">
                             PHP
                         </x-ui.button>
-                        <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.nginx', $d) }}'" title="Nginx Configuration">
+                        <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.nginx', $domain) }}'" title="Nginx Configuration">
                             Nginx
                         </x-ui.button>
-                        <x-ui.button variant="outline" size="xs" wire:click="openHtaccessModal({{ $d->id }})" title="Apache Rules (.htaccess) Compatibility">
+                        <x-ui.button variant="outline" size="xs" wire:click="openHtaccessModal({{ $domain->id }})" title="Apache Rules (.htaccess) Compatibility">
                             .htaccess
                         </x-ui.button>
-                        <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.dns', $d) }}'">
+                        <x-ui.button variant="outline" size="xs" onclick="window.location='{{ route('domains.dns', $domain) }}'">
                             DNS
                         </x-ui.button>
-                        @if($d->type->value !== 'primary')
+                        @if($domain->type->value !== 'primary')
                             <x-ui.button
                                 variant="danger"
                                 size="xs"
-                                wire:click="deleteDomain({{ $d->id }})"
+                                wire:click="deleteDomain({{ $domain->id }})"
                                 wire:confirm="Are you sure you want to delete this domain and its Nginx virtual host?"
                             >
                                 Delete

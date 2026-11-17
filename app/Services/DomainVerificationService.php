@@ -4,12 +4,16 @@ namespace App\Services;
 
 use App\Models\Domain;
 use App\Services\Dns\DnsResolverInterface;
+use Illuminate\Support\Facades\Http;
 
 class DomainVerificationService
 {
     public function __construct(
-        protected DnsResolverInterface $resolver
-    ) {}
+        protected DnsResolverInterface $resolver,
+        protected ?AgentClient $agentClient = null
+    ) {
+        $this->agentClient = $agentClient ?? app(AgentClient::class);
+    }
 
     /**
      * Check DNS records and update domain status.
@@ -20,10 +24,12 @@ class DomainVerificationService
      */
     public function verify(Domain $domain, bool $forceAdminAction = false): DomainVerificationResult
     {
+        $domain->loadMissing(['account.server', 'account.user']);
+
         $edgeHost = strtolower(rtrim((string) config('hpanel.edge_host', 'edge.nexorafox.in'), '.'));
         $txtPrefix = (string) config('hpanel.verification_txt_prefix', '_hpanel-verify');
 
-        // 1. Ownership check via TXT record: _hpanel-verify.<domain> must contain "hpanel-verify=<token>" exactly
+        // 1. Ownership check via TXT record: _hpanel-verify.<domain> must contain "hpanel-verify=<token>"
         $txtHost = "{$txtPrefix}.{$domain->domain}";
         $expectedTokenStr = "hpanel-verify={$domain->verification_token}";
 
@@ -32,92 +38,137 @@ class DomainVerificationService
         $foundTxtValues = [];
 
         foreach ($txtRecords as $record) {
-            $txtValue = $record['txt'] ?? null;
-            if ($txtValue !== null) {
-                $foundTxtValues[] = $txtValue;
-                if ($txtValue === $expectedTokenStr || str_contains($txtValue, $expectedTokenStr)) {
-                    $ownershipOk = true;
-                    break;
-                }
+            $raw = '';
+            if (! empty($record['entries']) && is_array($record['entries'])) {
+                $raw = implode('', $record['entries']);
+            } elseif (! empty($record['txt'])) {
+                $raw = (string) $record['txt'];
             }
 
-            if (! empty($record['entries']) && is_array($record['entries'])) {
-                foreach ($record['entries'] as $entry) {
-                    $foundTxtValues[] = $entry;
-                    if ($entry === $expectedTokenStr || str_contains($entry, $expectedTokenStr)) {
-                        $ownershipOk = true;
-                        break 2;
-                    }
-                }
+            // Strip quotes and trim whitespace; handle joined multi-string TXT
+            $cleaned = trim(str_replace(['"', "'"], '', $raw));
+            if ($cleaned !== '') {
+                $foundTxtValues[] = $cleaned;
+            }
+
+            if ($cleaned === $expectedTokenStr || str_contains($cleaned, $expectedTokenStr)) {
+                $ownershipOk = true;
+                break;
+            }
+        }
+
+        // Ownership fallback: HTTP proof via agent action domain.http_probe
+        $httpProofUsed = false;
+        if (! $ownershipOk && ! empty($domain->verification_token) && $domain->account?->server) {
+            if ($this->attemptHttpProof($domain)) {
+                $ownershipOk = true;
+                $httpProofUsed = true;
             }
         }
 
         // 2. Routing check:
-        // For non-apex: CNAME of domain or www subdomain must resolve to edge_host.
-        // For apex: A/AAAA records of domain must match resolved IPs of edge_host.
+        // Follow CNAME chain (max 5 hops) to edge host
         $routingOk = false;
-        $routingDetails = [];
+        $cnameTargets = [];
 
-        $cnameRecords = $this->resolver->getRecords($domain->domain, DNS_CNAME);
-        $wwwCnameRecords = $this->resolver->getRecords("www.{$domain->domain}", DNS_CNAME);
-        $allCnames = array_merge($cnameRecords, $wwwCnameRecords);
+        $current = $domain->domain;
+        $visited = [];
+        for ($hop = 0; $hop < 5; $hop++) {
+            if (isset($visited[$current])) {
+                break;
+            }
+            $visited[$current] = true;
 
-        foreach ($allCnames as $rec) {
-            if (! empty($rec['target'])) {
-                $normTarget = strtolower(rtrim((string) $rec['target'], '.'));
-                $routingDetails['cnames'][] = $normTarget;
-                if ($normTarget === $edgeHost) {
-                    $routingOk = true;
+            $records = $this->resolver->getRecords($current, DNS_CNAME);
+            $target = null;
+            foreach ($records as $rec) {
+                if (! empty($rec['target'])) {
+                    $target = strtolower(rtrim((string) $rec['target'], '.'));
                     break;
+                }
+            }
+
+            if (! $target) {
+                break;
+            }
+
+            $cnameTargets[] = $target;
+            if ($target === $edgeHost) {
+                $routingOk = true;
+                break;
+            }
+            $current = $target;
+        }
+
+        // Also check www.<domain> CNAME
+        if (! $routingOk) {
+            $wwwRecords = $this->resolver->getRecords("www.{$domain->domain}", DNS_CNAME);
+            foreach ($wwwRecords as $rec) {
+                if (! empty($rec['target'])) {
+                    $normTarget = strtolower(rtrim((string) $rec['target'], '.'));
+                    $cnameTargets[] = $normTarget;
+                    if ($normTarget === $edgeHost) {
+                        $routingOk = true;
+                        break;
+                    }
                 }
             }
         }
 
-        // If apex or if CNAME didn't match, check A/AAAA against resolved edge_host IPs
-        if (! $routingOk && ($domain->is_apex || empty($allCnames))) {
-            $edgeARecords = $this->resolver->getRecords($edgeHost, DNS_A);
-            $edgeAaaaRecords = $this->resolver->getRecords($edgeHost, DNS_AAAA);
+        // If not routing via CNAME chain, check A/AAAA records
+        $domainIps = [];
+        $validTargetIps = [];
 
-            $edgeIps = [];
-            foreach ($edgeARecords as $r) {
-                if (! empty($r['ip'])) {
-                    $edgeIps[] = strtolower(trim((string) $r['ip']));
-                }
+        if (! empty($domain->account?->server?->public_ip)) {
+            $validTargetIps[] = strtolower(trim((string) $domain->account->server->public_ip));
+        }
+
+        // Live resolution of edge host (no hard-coded IPs)
+        $edgeARecords = $this->resolver->getRecords($edgeHost, DNS_A);
+        $edgeAaaaRecords = $this->resolver->getRecords($edgeHost, DNS_AAAA);
+        foreach ($edgeARecords as $r) {
+            if (! empty($r['ip'])) {
+                $validTargetIps[] = strtolower(trim((string) $r['ip']));
             }
-            foreach ($edgeAaaaRecords as $r) {
-                if (! empty($r['ipv6'])) {
-                    $edgeIps[] = strtolower(trim((string) $r['ipv6']));
-                }
+        }
+        foreach ($edgeAaaaRecords as $r) {
+            if (! empty($r['ipv6'])) {
+                $validTargetIps[] = strtolower(trim((string) $r['ipv6']));
             }
-            $edgeIps = array_values(array_unique($edgeIps));
-            $routingDetails['edge_ips'] = $edgeIps;
+        }
+        $validTargetIps = array_values(array_unique($validTargetIps));
 
-            if (! empty($edgeIps)) {
-                $domainARecords = $this->resolver->getRecords($domain->domain, DNS_A);
-                $domainAaaaRecords = $this->resolver->getRecords($domain->domain, DNS_AAAA);
+        $domainARecords = $this->resolver->getRecords($domain->domain, DNS_A);
+        $domainAaaaRecords = $this->resolver->getRecords($domain->domain, DNS_AAAA);
+        foreach ($domainARecords as $r) {
+            if (! empty($r['ip'])) {
+                $domainIps[] = strtolower(trim((string) $r['ip']));
+            }
+        }
+        foreach ($domainAaaaRecords as $r) {
+            if (! empty($r['ipv6'])) {
+                $domainIps[] = strtolower(trim((string) $r['ipv6']));
+            }
+        }
+        $domainIps = array_values(array_unique($domainIps));
 
-                $domainIps = [];
-                foreach ($domainARecords as $r) {
-                    if (! empty($r['ip'])) {
-                        $domainIps[] = strtolower(trim((string) $r['ip']));
-                    }
-                }
-                foreach ($domainAaaaRecords as $r) {
-                    if (! empty($r['ipv6'])) {
-                        $domainIps[] = strtolower(trim((string) $r['ipv6']));
-                    }
-                }
-                $domainIps = array_values(array_unique($domainIps));
-                $routingDetails['domain_ips'] = $domainIps;
-
-                // Match if any domain IP matches an edge IP
-                if (count(array_intersect($domainIps, $edgeIps)) > 0) {
-                    $routingOk = true;
-                }
+        if (! $routingOk && ! empty($domainIps) && ! empty($validTargetIps)) {
+            if (count(array_intersect($domainIps, $validTargetIps)) > 0) {
+                $routingOk = true;
             }
         }
 
         $isVerified = $ownershipOk && $routingOk;
+
+        $checkDetails = [
+            'txt_values' => $foundTxtValues,
+            'cname_targets' => array_values(array_unique($cnameTargets)),
+            'domain_ips' => $domainIps,
+            'valid_target_ips' => $validTargetIps,
+            'resolvers' => ['1.1.1.1', '8.8.8.8'],
+            'http_proof' => $httpProofUsed,
+            'checked_at' => now()->toIso8601String(),
+        ];
 
         // Build plain language messages and short error (max 500 chars)
         if ($isVerified) {
@@ -141,6 +192,7 @@ class DomainVerificationService
 
         // Store timestamps and errors
         $domain->dns_last_checked_at = now();
+        $domain->dns_details = $checkDetails;
 
         if ($isVerified) {
             $domain->verification_status = 'verified';
@@ -149,15 +201,15 @@ class DomainVerificationService
             $domain->dns_consecutive_failures = 0;
         } else {
             $domain->dns_last_error = substr($error ?? $message, 0, 500);
+            $domain->dns_consecutive_failures++;
 
             if ($domain->verification_status === 'verified') {
-                $domain->dns_consecutive_failures++;
-                // Only downgrade after 3 consecutive failures, or on explicit admin action
+                // A verified domain is downgraded ONLY after 3 consecutive failed checks
                 if ($forceAdminAction || $domain->dns_consecutive_failures >= 3) {
                     $domain->verification_status = 'failed';
                 }
+                // Otherwise remains 'verified'!
             } else {
-                $domain->dns_consecutive_failures++;
                 if ($forceAdminAction || $domain->dns_consecutive_failures >= 3) {
                     $domain->verification_status = 'failed';
                 } else {
@@ -174,8 +226,51 @@ class DomainVerificationService
             verified: $isVerified,
             message: $message,
             error: $error,
-            details: $routingDetails
+            details: $checkDetails
         );
     }
-}
 
+    /**
+     * Attempt HTTP proof by writing token to /var/www/_acme/.well-known/hpanel-verify/<token>
+     * and fetching http://<domain>/.well-known/hpanel-verify/<token> over the public internet.
+     */
+    protected function attemptHttpProof(Domain $domain): bool
+    {
+        try {
+            $server = $domain->account?->server;
+            if (! $server) {
+                return false;
+            }
+
+            $res = $this->agentClient->execute(
+                server: $server,
+                action: 'domain.http_probe',
+                payload: [
+                    'token' => $domain->verification_token,
+                    'domain' => $domain->domain,
+                ],
+                dryRun: false
+            );
+
+            if (! ($res['success'] ?? false)) {
+                return false;
+            }
+
+            $url = "http://{$domain->domain}/.well-known/hpanel-verify/{$domain->verification_token}";
+
+            // Fetch public URL with 5 second timeout
+            $response = Http::timeout(5)
+                ->withoutRedirecting()
+                ->withHeaders(['User-Agent' => 'HPanel-Verifier/1.0'])
+                ->get($url);
+
+            if ($response->successful() && trim($response->body()) === trim($domain->verification_token)) {
+                return true;
+            }
+        } catch (\Throwable) {
+            // Ignore transient HTTP probe failure
+        }
+
+        return false;
+    }
+}

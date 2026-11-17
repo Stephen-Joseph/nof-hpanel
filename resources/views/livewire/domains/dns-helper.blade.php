@@ -44,11 +44,12 @@
                 <div>
                     <div class="flex items-center gap-2">
                         <span class="text-base font-semibold text-main">{{ $domain->domain }}</span>
-                        @if ($domain->is_apex)
+                        @if ($zoneInfo['is_apex'])
                             <x-ui.chip variant="primary" size="xs">Apex Domain</x-ui.chip>
                         @else
                             <x-ui.chip variant="neutral" size="xs">Subdomain</x-ui.chip>
                         @endif
+                        <span class="text-xs text-muted font-mono">Zone: {{ $zoneInfo['zone'] }}</span>
                     </div>
                     <p class="text-xs text-muted mt-0.5">
                         @if ($domain->dns_last_checked_at)
@@ -97,66 +98,120 @@
                     1
                 </div>
                 <div class="flex-1">
-                    <h3 class="text-sm font-semibold text-main">Required DNS Records: Routing</h3>
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-semibold text-main">Required DNS Records: Routing</h3>
+                        <span class="text-xs text-muted font-mono">DNS Zone: <strong>{{ $zoneInfo['zone'] }}</strong></span>
+                    </div>
 
-                    @if ($domain->is_apex)
+                    @if ($zoneInfo['is_apex'])
                         <div class="mt-2 text-xs text-muted leading-relaxed">
-                            <p class="font-medium text-main">Your domain is a root/apex domain ({{ $domain->domain }}).</p>
+                            <p class="font-medium text-main">Your domain is a root/apex domain ({{ $domain->domain }}) in DNS zone <strong>{{ $zoneInfo['zone'] }}</strong>.</p>
                             <p class="mt-1">Standard DNS rules (RFC 1034/1912) prohibit CNAME records at the apex zone.</p>
-                            <div class="mt-3 p-3 bg-shell rounded-xl border border-border text-xs text-main">
-                                <span class="font-semibold text-primary-500">Recommended:</span>
-                                Use an <strong>ALIAS</strong>, <strong>ANAME</strong>, or <strong>CNAME Flattening</strong> record pointing directly to your edge host:
-                                <div class="mt-2 flex items-center gap-2" x-data="{ copied: false }">
-                                    <code class="px-2.5 py-1 rounded-lg bg-card border border-border font-mono text-xs text-main font-semibold select-all">{{ $edgeHost }}</code>
-                                    <button type="button" x-on:click="navigator.clipboard.writeText('{{ $edgeHost }}'); copied = true; setTimeout(() => copied = false, 2000)"
-                                        class="px-2.5 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer">
-                                        <span x-show="!copied">Copy</span>
-                                        <span x-show="copied" class="text-emerald-500 font-semibold">Copied!</span>
-                                    </button>
-                                </div>
-                                <p class="mt-2 text-[11px] text-muted">Alternatively, create A/AAAA records that match the resolved IP addresses of <code class="font-mono">{{ $edgeHost }}</code>:</p>
-                                @if (! empty($edgeIps))
-                                    <div class="mt-2 space-y-1.5">
-                                        @foreach ($edgeIps as $ip)
-                                            <div class="flex items-center gap-2" x-data="{ copiedIp: false }">
-                                                <span class="font-mono font-bold text-primary-500">A</span>
-                                                <code class="px-2 py-0.5 rounded bg-card border border-border font-mono text-xs text-main select-all">{{ $ip }}</code>
-                                                <button type="button" x-on:click="navigator.clipboard.writeText('{{ $ip }}'); copiedIp = true; setTimeout(() => copiedIp = false, 2000)"
-                                                    class="px-2 py-0.5 text-[11px] rounded border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer">
-                                                    <span x-show="!copiedIp">Copy</span>
-                                                    <span x-show="copiedIp" class="text-emerald-500 font-semibold">Copied!</span>
+                            
+                            <div class="mt-3 overflow-x-auto">
+                                <table class="w-full text-left border-collapse text-xs">
+                                    <thead>
+                                        <tr class="border-b border-border text-muted font-medium bg-shell/50">
+                                            <th class="py-2 px-3">Type</th>
+                                            <th class="py-2 px-3">Host (in zone)</th>
+                                            <th class="py-2 px-3">Full Record Name</th>
+                                            <th class="py-2 px-3">Target / IP Value</th>
+                                            <th class="py-2 px-3 text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-border">
+                                        <!-- ALIAS/ANAME row -->
+                                        <tr class="text-main" x-data="{ copiedHost: false, copiedFull: false, copiedTarget: false }">
+                                            <td class="py-2.5 px-3 font-mono font-bold text-primary-500">ALIAS / ANAME</td>
+                                            <td class="py-2.5 px-3 font-mono font-semibold">{{ $cnameRelativeHost }}</td>
+                                            <td class="py-2.5 px-3 font-mono text-muted">{{ $cnameFullName }}</td>
+                                            <td class="py-2.5 px-3 font-mono font-semibold text-primary-600 dark:text-primary-400">{{ $edgeHost }}</td>
+                                            <td class="py-2.5 px-3 text-right space-x-1 whitespace-nowrap">
+                                                <button type="button" x-on:click="navigator.clipboard.writeText('{{ $cnameRelativeHost }}'); copiedHost = true; setTimeout(() => copiedHost = false, 2000)"
+                                                    class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer" title="Copy host relative to zone">
+                                                    <span x-show="!copiedHost">Copy Host</span>
+                                                    <span x-show="copiedHost" class="text-emerald-500 font-semibold">Copied!</span>
                                                 </button>
-                                            </div>
+                                                <button type="button" x-on:click="navigator.clipboard.writeText('{{ $cnameFullName }}'); copiedFull = true; setTimeout(() => copiedFull = false, 2000)"
+                                                    class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer" title="Copy full record name">
+                                                    <span x-show="!copiedFull">Copy Full</span>
+                                                    <span x-show="copiedFull" class="text-emerald-500 font-semibold">Copied!</span>
+                                                </button>
+                                                <button type="button" x-on:click="navigator.clipboard.writeText('{{ $edgeHost }}'); copiedTarget = true; setTimeout(() => copiedTarget = false, 2000)"
+                                                    class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer" title="Copy target host">
+                                                    <span x-show="!copiedTarget">Copy Target</span>
+                                                    <span x-show="copiedTarget" class="text-emerald-500 font-semibold">Copied!</span>
+                                                </button>
+                                            </td>
+                                        </tr>
+
+                                        <!-- A Records equal to node public IP(s) -->
+                                        @php
+                                            $apexIps = ! empty($nodeIps) ? $nodeIps : $edgeIps;
+                                        @endphp
+                                        @foreach ($apexIps as $ip)
+                                            <tr class="text-main" x-data="{ copiedHost: false, copiedFull: false, copiedIp: false }">
+                                                <td class="py-2.5 px-3 font-mono font-bold text-primary-500">A</td>
+                                                <td class="py-2.5 px-3 font-mono font-semibold">{{ $cnameRelativeHost }}</td>
+                                                <td class="py-2.5 px-3 font-mono text-muted">{{ $cnameFullName }}</td>
+                                                <td class="py-2.5 px-3 font-mono font-semibold">{{ $ip }}</td>
+                                                <td class="py-2.5 px-3 text-right space-x-1 whitespace-nowrap">
+                                                    <button type="button" x-on:click="navigator.clipboard.writeText('{{ $cnameRelativeHost }}'); copiedHost = true; setTimeout(() => copiedHost = false, 2000)"
+                                                        class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer">
+                                                        <span x-show="!copiedHost">Copy Host</span>
+                                                        <span x-show="copiedHost" class="text-emerald-500 font-semibold">Copied!</span>
+                                                    </button>
+                                                    <button type="button" x-on:click="navigator.clipboard.writeText('{{ $cnameFullName }}'); copiedFull = true; setTimeout(() => copiedFull = false, 2000)"
+                                                        class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer">
+                                                        <span x-show="!copiedFull">Copy Full</span>
+                                                        <span x-show="copiedFull" class="text-emerald-500 font-semibold">Copied!</span>
+                                                    </button>
+                                                    <button type="button" x-on:click="navigator.clipboard.writeText('{{ $ip }}'); copiedIp = true; setTimeout(() => copiedIp = false, 2000)"
+                                                        class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer">
+                                                        <span x-show="!copiedIp">Copy IP</span>
+                                                        <span x-show="copiedIp" class="text-emerald-500 font-semibold">Copied!</span>
+                                                    </button>
+                                                </td>
+                                            </tr>
                                         @endforeach
-                                    </div>
-                                @endif
-                            </div>
-                            <div class="mt-3">
-                                <span class="font-semibold">For WWW subdomain:</span> Add a standard CNAME record for <code class="font-mono">www</code> pointing to <code class="font-mono">{{ $edgeHost }}</code>.
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     @else
-                        <p class="mt-1 text-xs text-muted">Create a CNAME record at your DNS provider directing traffic to our edge hostname:</p>
+                        <p class="mt-1 text-xs text-muted">Create a CNAME record at your DNS provider in zone <strong>{{ $zoneInfo['zone'] }}</strong> directing traffic to our edge hostname:</p>
                         <div class="mt-3 overflow-x-auto">
                             <table class="w-full text-left border-collapse text-xs">
                                 <thead>
                                     <tr class="border-b border-border text-muted font-medium bg-shell/50">
                                         <th class="py-2 px-3">Type</th>
-                                        <th class="py-2 px-3">Host / Name</th>
+                                        <th class="py-2 px-3">Host (in zone)</th>
+                                        <th class="py-2 px-3">Full Record Name</th>
                                         <th class="py-2 px-3">Points To (Target)</th>
-                                        <th class="py-2 px-3 text-right">Action</th>
+                                        <th class="py-2 px-3 text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr class="text-main" x-data="{ copied: false }">
+                                    <tr class="text-main" x-data="{ copiedHost: false, copiedFull: false, copiedTarget: false }">
                                         <td class="py-2.5 px-3 font-mono font-bold text-primary-500">CNAME</td>
-                                        <td class="py-2.5 px-3 font-mono">{{ $domain->domain }}</td>
-                                        <td class="py-2.5 px-3 font-mono font-semibold">{{ $edgeHost }}</td>
-                                        <td class="py-2.5 px-3 text-right">
-                                            <button type="button" x-on:click="navigator.clipboard.writeText('{{ $edgeHost }}'); copied = true; setTimeout(() => copied = false, 2000)"
-                                                class="px-2.5 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer">
-                                                <span x-show="!copied">Copy Value</span>
-                                                <span x-show="copied" class="text-emerald-500 font-semibold">Copied!</span>
+                                        <td class="py-2.5 px-3 font-mono font-semibold">{{ $cnameRelativeHost }}</td>
+                                        <td class="py-2.5 px-3 font-mono text-muted">{{ $cnameFullName }}</td>
+                                        <td class="py-2.5 px-3 font-mono font-semibold text-primary-600 dark:text-primary-400">{{ $edgeHost }}</td>
+                                        <td class="py-2.5 px-3 text-right space-x-1 whitespace-nowrap">
+                                            <button type="button" x-on:click="navigator.clipboard.writeText('{{ $cnameRelativeHost }}'); copiedHost = true; setTimeout(() => copiedHost = false, 2000)"
+                                                class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer" title="Copy host relative to zone">
+                                                <span x-show="!copiedHost">Copy Host</span>
+                                                <span x-show="copiedHost" class="text-emerald-500 font-semibold">Copied!</span>
+                                            </button>
+                                            <button type="button" x-on:click="navigator.clipboard.writeText('{{ $cnameFullName }}'); copiedFull = true; setTimeout(() => copiedFull = false, 2000)"
+                                                class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer" title="Copy full record name">
+                                                <span x-show="!copiedFull">Copy Full</span>
+                                                <span x-show="copiedFull" class="text-emerald-500 font-semibold">Copied!</span>
+                                            </button>
+                                            <button type="button" x-on:click="navigator.clipboard.writeText('{{ $edgeHost }}'); copiedTarget = true; setTimeout(() => copiedTarget = false, 2000)"
+                                                class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer" title="Copy target host">
+                                                <span x-show="!copiedTarget">Copy Target</span>
+                                                <span x-show="copiedTarget" class="text-emerald-500 font-semibold">Copied!</span>
                                             </button>
                                         </td>
                                     </tr>
@@ -175,7 +230,10 @@
                     2
                 </div>
                 <div class="flex-1">
-                    <h3 class="text-sm font-semibold text-main">Add Ownership Verification TXT Record</h3>
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-semibold text-main">Add Ownership Verification TXT Record</h3>
+                        <span class="text-xs text-muted font-mono">DNS Zone: <strong>{{ $zoneInfo['zone'] }}</strong></span>
+                    </div>
                     <p class="mt-1 text-xs text-muted">Add this TXT record at your domain's DNS zone to verify administrative control:</p>
 
                     <div class="mt-3 overflow-x-auto">
@@ -183,28 +241,37 @@
                             <thead>
                                 <tr class="border-b border-border text-muted font-medium bg-shell/50">
                                     <th class="py-2 px-3">Type</th>
-                                    <th class="py-2 px-3">Host / Name</th>
+                                    <th class="py-2 px-3">Host (in zone)</th>
+                                    <th class="py-2 px-3">Full Record Name</th>
                                     <th class="py-2 px-3">TXT Value</th>
                                     <th class="py-2 px-3 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr class="text-main" x-data="{ copiedHost: false, copiedValue: false }">
+                                <tr class="text-main" x-data="{ copiedHost: false, copiedFull: false, copiedValue: false }">
                                     <td class="py-2.5 px-3 font-mono font-bold text-primary-500">TXT</td>
                                     <td class="py-2.5 px-3 font-mono font-semibold">
+                                        {{ $txtRelativeHost }}
+                                    </td>
+                                    <td class="py-2.5 px-3 font-mono text-muted">
                                         {{ $txtHost }}
                                     </td>
-                                    <td class="py-2.5 px-3 font-mono text-muted truncate max-w-md select-all">
+                                    <td class="py-2.5 px-3 font-mono text-muted truncate max-w-xs select-all">
                                         {{ $txtValue }}
                                     </td>
                                     <td class="py-2.5 px-3 text-right space-x-1 whitespace-nowrap">
-                                        <button type="button" x-on:click="navigator.clipboard.writeText('{{ $txtHost }}'); copiedHost = true; setTimeout(() => copiedHost = false, 2000)"
-                                            class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer">
+                                        <button type="button" x-on:click="navigator.clipboard.writeText('{{ $txtRelativeHost }}'); copiedHost = true; setTimeout(() => copiedHost = false, 2000)"
+                                            class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer" title="Copy host relative to zone">
                                             <span x-show="!copiedHost">Copy Host</span>
                                             <span x-show="copiedHost" class="text-emerald-500 font-semibold">Copied!</span>
                                         </button>
+                                        <button type="button" x-on:click="navigator.clipboard.writeText('{{ $txtHost }}'); copiedFull = true; setTimeout(() => copiedFull = false, 2000)"
+                                            class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer" title="Copy full record name">
+                                            <span x-show="!copiedFull">Copy Full</span>
+                                            <span x-show="copiedFull" class="text-emerald-500 font-semibold">Copied!</span>
+                                        </button>
                                         <button type="button" x-on:click="navigator.clipboard.writeText('{{ $txtValue }}'); copiedValue = true; setTimeout(() => copiedValue = false, 2000)"
-                                            class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer">
+                                            class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer" title="Copy TXT value">
                                             <span x-show="!copiedValue">Copy Value</span>
                                             <span x-show="copiedValue" class="text-emerald-500 font-semibold">Copied!</span>
                                         </button>
@@ -245,11 +312,75 @@
                         </x-ui.button>
                     </div>
 
-                    @if ($checkMessage)
-                        <div class="mt-3 p-3 rounded-xl {{ $checkSuccess ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-500 dark:text-rose-400' }} text-xs">
-                            {{ $checkMessage }}
+                    <!-- Plain Language Error or Status under Verify Button -->
+                    @if ($checkMessage || $domain->dns_last_error)
+                        <div class="mt-3 p-3.5 rounded-xl {{ ($checkSuccess || ($domain->verification_status === 'verified' && !$domain->dns_last_error)) ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-500 dark:text-rose-400' }} text-xs leading-relaxed">
+                            <span class="font-semibold">{{ ($checkSuccess || ($domain->verification_status === 'verified' && !$domain->dns_last_error)) ? 'Status:' : 'Verification Message:' }}</span>
+                            {{ $checkMessage ?? $domain->dns_last_error }}
                         </div>
                     @endif
+
+                    <!-- What We Found Section -->
+                    <div class="mt-4 pt-4 border-t border-border">
+                        <h4 class="text-xs font-semibold uppercase tracking-wider text-muted mb-2">What we found</h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <div class="p-3 rounded-xl bg-shell/50 border border-border">
+                                <span class="text-muted block font-medium">TXT Records:</span>
+                                <div class="mt-1 font-mono text-[11px] text-main break-all">
+                                    @if (! empty($dnsDetails['txt_values']))
+                                        @foreach ($dnsDetails['txt_values'] as $txt)
+                                            <div class="truncate" title="{{ $txt }}">&bull; {{ $txt }}</div>
+                                        @endforeach
+                                    @else
+                                        <span class="text-muted italic">None found</span>
+                                    @endif
+                                </div>
+                            </div>
+
+                            <div class="p-3 rounded-xl bg-shell/50 border border-border">
+                                <span class="text-muted block font-medium">CNAME Target:</span>
+                                <div class="mt-1 font-mono text-[11px] text-main">
+                                    @if (! empty($dnsDetails['cname_targets']))
+                                        {{ implode(' &rarr; ', $dnsDetails['cname_targets']) }}
+                                    @else
+                                        <span class="text-muted italic">None found</span>
+                                    @endif
+                                </div>
+                            </div>
+
+                            <div class="p-3 rounded-xl bg-shell/50 border border-border">
+                                <span class="text-muted block font-medium">A / AAAA Values:</span>
+                                <div class="mt-1 font-mono text-[11px] text-main">
+                                    @if (! empty($dnsDetails['domain_ips']))
+                                        {{ implode(', ', $dnsDetails['domain_ips']) }}
+                                    @else
+                                        <span class="text-muted italic">None found</span>
+                                    @endif
+                                </div>
+                            </div>
+
+                            <div class="p-3 rounded-xl bg-shell/50 border border-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-muted font-medium">Resolvers Used:</span>
+                                    <span class="font-mono text-[11px] text-main">
+                                        {{ ! empty($dnsDetails['resolvers']) ? implode(', ', $dnsDetails['resolvers']) : '1.1.1.1, 8.8.8.8' }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
+                                    <span class="text-muted font-medium">Checked:</span>
+                                    <span class="text-[11px] text-main">
+                                        @if (! empty($dnsDetails['checked_at']))
+                                            {{ \Illuminate\Support\Carbon::parse($dnsDetails['checked_at'])->diffForHumans() }}
+                                        @elseif ($domain->dns_last_checked_at)
+                                            {{ $domain->dns_last_checked_at->diffForHumans() }}
+                                        @else
+                                            Not checked yet
+                                        @endif
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </x-ui.card>
@@ -313,8 +444,18 @@
                     @endif
 
                     @if ($domain->ssl_last_error)
-                        <div class="mt-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-500 dark:text-rose-400">
-                            <span class="font-semibold">SSL Error:</span> {{ $domain->ssl_last_error }}
+                        <div class="mt-4 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-500 dark:text-rose-400" x-data="{ copiedErr: false }">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-semibold text-rose-600 dark:text-rose-300">SSL Error Details:</span>
+                                <button type="button" x-on:click="navigator.clipboard.writeText('{{ addslashes($domain->ssl_last_error) }}'); copiedErr = true; setTimeout(() => copiedErr = false, 2000)"
+                                    class="px-2 py-0.5 text-[11px] rounded border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 transition cursor-pointer">
+                                    <span x-show="!copiedErr">Copy Error</span>
+                                    <span x-show="copiedErr" class="font-semibold">Copied!</span>
+                                </button>
+                            </div>
+                            <div class="font-mono text-[11px] whitespace-pre-wrap break-all leading-relaxed">
+                                {{ $domain->ssl_last_error }}
+                            </div>
                         </div>
                     @endif
                 </div>

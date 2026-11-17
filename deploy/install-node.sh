@@ -403,6 +403,11 @@ execute mkdir -p "$CONFIG_DIR" "$CERTS_DIR" "$LOGS_DIR" "$DATA_DIR" "/home"
 execute chmod 750 "$CONFIG_DIR" "$LOGS_DIR" "$DATA_DIR"
 execute chmod 755 "$CERTS_DIR"
 
+# Ensure shared ACME challenge & HTTP verification directory exists with 0755 root:root
+execute mkdir -p "/var/www/_acme/.well-known/acme-challenge" "/var/www/_acme/.well-known/hpanel-verify"
+execute chown -R root:root "/var/www/_acme"
+execute chmod -R 755 "/var/www/_acme"
+
 # 7. Download or Build Agent Binary
 echo -e "${BLUE}[7/9] Preparing panel-agent binary...${NC}"
 AGENT_BIN="/usr/local/bin/panel-agent"

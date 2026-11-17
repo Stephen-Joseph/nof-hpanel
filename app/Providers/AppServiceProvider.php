@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\Dns\DirectDnsResolver;
 use App\Services\Dns\DnsResolverInterface;
 use App\Services\Dns\SystemDnsResolver;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -16,7 +17,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->bind(DnsResolverInterface::class, SystemDnsResolver::class);
+        $this->app->bind(DnsResolverInterface::class, DirectDnsResolver::class);
     }
 
     /**

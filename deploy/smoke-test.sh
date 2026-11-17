@@ -326,6 +326,98 @@ EOF
 fi
 
 # -----------------------------------------------------------------------------
+# 7. Multi-Account Domain DNS & ACME Shared Webroot Verification
+# -----------------------------------------------------------------------------
+echo ""
+echo "--> Verifying Multi-Account Domain Isolation & ACME Shared Webroot..."
+
+MULTI_CLIENT_SETUP=$(php -r "
+  require '${APP_DIR}/vendor/autoload.php';
+  \$app = require_once '${APP_DIR}/bootstrap/app.php';
+  \$kernel = \$app->make(Illuminate\Contracts\Console\Kernel::class);
+  \$kernel->bootstrap();
+
+  \$user = App\Models\User::firstOrCreate(
+    ['email' => 'client-multi@example.test'],
+    ['name' => 'Multi Client', 'password' => bcrypt('secret123'), 'role' => 'client']
+  );
+
+  \$server = App\Models\Server::first() ?? App\Models\Server::create([
+    'name' => 'LocalNode', 'hostname' => '127.0.0.1', 'public_ip' => '127.0.0.1',
+    'status' => 'active', 'auth_type' => 'hmac', 'auth_secret' => 'secret',
+  ]);
+
+  \$pkg = App\Models\Package::first() ?? App\Models\Package::create([
+    'name' => 'Default', 'disk_limit_mb' => 5000, 'bandwidth_limit_mb' => 50000,
+    'max_domains' => 10, 'max_subdomains' => 10, 'max_databases' => 5,
+    'max_ftp_users' => 5, 'max_email_accounts' => 5, 'is_active' => true,
+  ]);
+
+  \$acc1 = App\Models\Account::firstOrCreate(
+    ['username' => 'clntacc1'],
+    ['user_id' => \$user->id, 'server_id' => \$server->id, 'package_id' => \$pkg->id, 'domain' => 'client-a.test', 'status' => 'active']
+  );
+  \$dom1 = App\Models\Domain::firstOrCreate(
+    ['domain' => 'client-a.test'],
+    ['account_id' => \$acc1->id, 'type' => 'primary', 'status' => 'active', 'verification_status' => 'verified', 'force_https' => true]
+  );
+
+  \$acc2 = App\Models\Account::firstOrCreate(
+    ['username' => 'clntacc2'],
+    ['user_id' => \$user->id, 'server_id' => \$server->id, 'package_id' => \$pkg->id, 'domain' => 'client-b.test', 'status' => 'active']
+  );
+  \$dom2 = App\Models\Domain::firstOrCreate(
+    ['domain' => 'client-b.test'],
+    ['account_id' => \$acc2->id, 'type' => 'primary', 'status' => 'active', 'verification_status' => 'verified', 'force_https' => true]
+  );
+
+  echo json_encode([
+    'token1' => \$dom1->verification_token,
+    'token2' => \$dom2->verification_token,
+    'domain1' => \$dom1->domain,
+    'domain2' => \$dom2->domain,
+  ]);
+" 2>/dev/null || echo "{}")
+
+TOKEN1=$(echo "$MULTI_CLIENT_SETUP" | grep -o '"token1":"[^"]*' | cut -d'"' -f4 || echo "")
+TOKEN2=$(echo "$MULTI_CLIENT_SETUP" | grep -o '"token2":"[^"]*' | cut -d'"' -f4 || echo "")
+
+if [[ -n "$TOKEN1" && -n "$TOKEN2" && "$TOKEN1" != "$TOKEN2" ]]; then
+  record_result "domain:distinct_tokens" "PASS" "client accounts have independent tokens (${TOKEN1:0:8}... vs ${TOKEN2:0:8}...)"
+else
+  record_result "domain:distinct_tokens" "FAIL" "tokens missing or duplicated (token1=${TOKEN1}, token2=${TOKEN2})"
+fi
+
+# Ensure shared ACME challenge directory exists and write smoke test challenge probe
+mkdir -p /var/www/_acme/.well-known/acme-challenge
+chmod 755 /var/www/_acme /var/www/_acme/.well-known /var/www/_acme/.well-known/acme-challenge
+SMOKE_PROBE="smoke-challenge-proof-$(date +%s)"
+echo "$SMOKE_PROBE" > /var/www/_acme/.well-known/acme-challenge/smoke-probe
+
+# Test that ACME probe returns 200 on 127.0.0.1 with each Host header
+PROBE_RESP_A=$(curl -s -o /tmp/probe_a.txt -w '%{http_code}' -H "Host: client-a.test" http://127.0.0.1/.well-known/acme-challenge/smoke-probe || true)
+PROBE_RESP_B=$(curl -s -o /tmp/probe_b.txt -w '%{http_code}' -H "Host: client-b.test" http://127.0.0.1/.well-known/acme-challenge/smoke-probe || true)
+
+if [[ "$PROBE_RESP_A" == "200" && "$PROBE_RESP_B" == "200" ]]; then
+  record_result "acme:shared_probe_200" "PASS" "ACME probe served with HTTP 200 for both distinct host headers on 127.0.0.1"
+else
+  record_result "acme:shared_probe_200" "FAIL" "probe response client-a=${PROBE_RESP_A}, client-b=${PROBE_RESP_B}"
+fi
+
+# Assert HTTP to HTTPS redirect does not apply to /.well-known/acme-challenge/
+# If Force HTTPS is active on vhost, / should redirect (301/302) while /.well-known/acme-challenge/ does not
+ACME_REDIRECT_CHECK=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: client-a.test" http://127.0.0.1/.well-known/acme-challenge/smoke-probe || true)
+ROOT_REDIRECT_CHECK=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: client-a.test" http://127.0.0.1/ || true)
+
+if [[ "$ACME_REDIRECT_CHECK" == "200" && ("$ROOT_REDIRECT_CHECK" == "301" || "$ROOT_REDIRECT_CHECK" == "302" || "$ROOT_REDIRECT_CHECK" == "200") ]]; then
+  record_result "acme:bypass_https_redirect" "PASS" "ACME challenge path returns 200 directly without redirect loop"
+else
+  record_result "acme:bypass_https_redirect" "FAIL" "acme_code=${ACME_REDIRECT_CHECK}, root_code=${ROOT_REDIRECT_CHECK}"
+fi
+
+rm -f /var/www/_acme/.well-known/acme-challenge/smoke-probe /tmp/probe_a.txt /tmp/probe_b.txt
+
+# -----------------------------------------------------------------------------
 # Summary Table
 # -----------------------------------------------------------------------------
 echo ""

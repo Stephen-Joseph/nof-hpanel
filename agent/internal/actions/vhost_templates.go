@@ -70,8 +70,16 @@ server {
 
     # Shared ACME challenge handler for Let's Encrypt / Certbot
     location ^~ /.well-known/acme-challenge/ {
-        default_type "text/plain";
-        root {{.DocumentRoot}};
+        root /var/www/_acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    # HPanel domain verification probe handler
+    location ^~ /.well-known/hpanel-verify/ {
+        root /var/www/_acme;
+        default_type text/plain;
+        try_files $uri =404;
     }
 
     location / {
@@ -92,6 +100,20 @@ server {
 {{if .HstsEnabled}}
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 {{end}}
+
+    # Shared ACME challenge handler for Let's Encrypt / Certbot
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/_acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    # HPanel domain verification probe handler
+    location ^~ /.well-known/hpanel-verify/ {
+        root /var/www/_acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
 {{else if .SSLEnabled}}
 server {
     listen 80;
@@ -111,8 +133,16 @@ server {
 
     # Shared ACME challenge handler for Let's Encrypt / Certbot
     location ^~ /.well-known/acme-challenge/ {
-        default_type "text/plain";
-        root {{.DocumentRoot}};
+        root /var/www/_acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    # HPanel domain verification probe handler
+    location ^~ /.well-known/hpanel-verify/ {
+        root /var/www/_acme;
+        default_type text/plain;
+        try_files $uri =404;
     }
 {{else}}
 server {
@@ -122,8 +152,16 @@ server {
 
     # Shared ACME challenge handler for Let's Encrypt / Certbot
     location ^~ /.well-known/acme-challenge/ {
-        default_type "text/plain";
-        root {{.DocumentRoot}};
+        root /var/www/_acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    # HPanel domain verification probe handler
+    location ^~ /.well-known/hpanel-verify/ {
+        root /var/www/_acme;
+        default_type text/plain;
+        try_files $uri =404;
     }
 {{end}}
 
@@ -268,7 +306,24 @@ func buildWwwRedirectBlock(domain, mode string) string {
     listen 80;
     listen [::]:80;
     server_name %s;
-    return 301 $scheme://www.%s$request_uri;
+
+    # Shared ACME challenge handler for Let's Encrypt / Certbot
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/_acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    # HPanel domain verification probe handler
+    location ^~ /.well-known/hpanel-verify/ {
+        root /var/www/_acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 $scheme://www.%s$request_uri;
+    }
 }`, domain, domain)
 	case "strip_www":
 		// Redirect www to bare domain
@@ -276,11 +331,46 @@ func buildWwwRedirectBlock(domain, mode string) string {
     listen 80;
     listen [::]:80;
     server_name www.%s;
-    return 301 $scheme://%s$request_uri;
+
+    # Shared ACME challenge handler for Let's Encrypt / Certbot
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/_acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    # HPanel domain verification probe handler
+    location ^~ /.well-known/hpanel-verify/ {
+        root /var/www/_acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 $scheme://%s$request_uri;
+    }
 }`, domain, domain)
 	default:
 		return ""
 	}
+}
+
+// EnsureAcmeDirectories creates /var/www/_acme (0755) with .well-known/acme-challenge (0755)
+// and .well-known/hpanel-verify (0755) for HTTP-01 challenges and domain proofs.
+func EnsureAcmeDirectories() error {
+	dirs := []string{
+		"/var/www/_acme",
+		"/var/www/_acme/.well-known",
+		"/var/www/_acme/.well-known/acme-challenge",
+		"/var/www/_acme/.well-known/hpanel-verify",
+	}
+	for _, d := range dirs {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			return fmt.Errorf("creating acme directory %s: %w", d, err)
+		}
+		_ = os.Chmod(d, 0755)
+	}
+	return nil
 }
 
 func buildRedirectsBlock(redirects []RedirectRule) string {

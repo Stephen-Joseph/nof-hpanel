@@ -5,6 +5,7 @@ namespace App\Livewire\Domains;
 use App\Jobs\IssueSslCertificateJob;
 use App\Models\Domain;
 use App\Services\Dns\DnsResolverInterface;
+use App\Services\Dns\DomainZoneResolver;
 use App\Services\DomainVerificationResult;
 use App\Services\DomainVerificationService;
 use Illuminate\View\View;
@@ -20,10 +21,13 @@ class DnsHelper extends Component
 
     public bool $hasChecked = false;
 
+    public ?array $lastDetails = null;
+
     public function mount(Domain $domain): void
     {
         $this->authorize('verify', $domain);
         $this->domain = $domain->load(['account.server', 'account.user', 'certificate']);
+        $this->lastDetails = $this->domain->dns_details;
     }
 
     public function verifyDns(DomainVerificationService $service): void
@@ -36,6 +40,7 @@ class DnsHelper extends Component
         $this->domain->refresh();
         $this->checkSuccess = $result->verified;
         $this->checkMessage = $result->message;
+        $this->lastDetails = $result->details;
 
         if ($result->verified) {
             session()->flash('status', $result->message);
@@ -60,7 +65,18 @@ class DnsHelper extends Component
             return;
         }
 
+        if ($this->domain->ssl_status === 'failed' && $this->domain->ssl_requested_at && $this->domain->ssl_requested_at->diffInMinutes(now()) < 60) {
+            session()->flash('error', 'SSL validation failed recently for this domain. Please wait at least 1 hour between attempts.');
+
+            return;
+        }
+
         $email = $this->domain->account->user->email ?? 'admin@'.config('app.domain', 'hpanel.local');
+
+        $this->domain->update([
+            'ssl_requested_at' => now(),
+            'ssl_status' => 'pending',
+        ]);
 
         IssueSslCertificateJob::dispatch($this->domain, $email);
 
@@ -69,7 +85,7 @@ class DnsHelper extends Component
         session()->flash('status', "SSL certificate request initiated for {$this->domain->domain}.");
     }
 
-    public function render(DnsResolverInterface $resolver): View
+    public function render(DnsResolverInterface $resolver, DomainZoneResolver $zoneResolver): View
     {
         $this->domain->refresh();
         $edgeHost = (string) config('hpanel.edge_host', 'edge.nexorafox.in');
@@ -93,11 +109,24 @@ class DnsHelper extends Component
             }
         }
 
+        $nodeIps = [];
+        if (! empty($this->domain->account?->server?->public_ip)) {
+            $nodeIps[] = (string) $this->domain->account->server->public_ip;
+        }
+
+        $zoneInfo = $zoneResolver->resolve($this->domain->domain);
+
         return view('livewire.domains.dns-helper', [
             'edgeHost' => $edgeHost,
             'edgeIps' => array_values(array_unique($edgeIps)),
-            'txtHost' => $this->domain->getVerificationTxtHost(),
+            'nodeIps' => array_values(array_unique($nodeIps)),
+            'zoneInfo' => $zoneInfo,
+            'txtHost' => $zoneInfo['txt_full_name'],
+            'txtRelativeHost' => $zoneInfo['txt_relative_host'],
             'txtValue' => $this->domain->getVerificationTxtValue(),
+            'cnameRelativeHost' => $zoneInfo['cname_relative_host'],
+            'cnameFullName' => $zoneInfo['cname_full_name'],
+            'dnsDetails' => $this->lastDetails ?? $this->domain->dns_details ?? [],
         ]);
     }
 }

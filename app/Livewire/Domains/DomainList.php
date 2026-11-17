@@ -3,11 +3,13 @@
 namespace App\Livewire\Domains;
 
 use App\Enums\AppProfile;
+use App\Jobs\IssueSslCertificateJob;
 use App\Jobs\RemoveVhostJob;
 use App\Jobs\WriteVhostJob;
 use App\Models\Account;
 use App\Models\Domain;
 use App\Models\User;
+use App\Services\DomainVerificationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -138,6 +140,51 @@ class DomainList extends Component
         $domain->delete();
 
         session()->flash('status', "Domain '{$domain->domain}' removed and virtual host purged.");
+    }
+
+    public function verify(int $id, DomainVerificationService $service): void
+    {
+        /** @var Domain $domain */
+        $domain = Domain::with(['account.server', 'account.user'])->findOrFail($id);
+        $this->authorize('verify', $domain);
+
+        $result = $service->verify($domain);
+
+        if ($result->verified) {
+            session()->flash('status', "Domain '{$domain->domain}' verified successfully.");
+        } else {
+            session()->flash('error', $result->message);
+        }
+    }
+
+    public function enableSsl(int $id): void
+    {
+        /** @var Domain $domain */
+        $domain = Domain::with(['account.server', 'account.user', 'certificate'])->findOrFail($id);
+        $this->authorize('requestSsl', $domain);
+
+        if ($domain->verification_status !== 'verified') {
+            session()->flash('error', "Domain '{$domain->domain}' must be verified via DNS before requesting an SSL certificate.");
+
+            return;
+        }
+
+        if ($domain->ssl_status === 'failed' && $domain->ssl_requested_at && $domain->ssl_requested_at->diffInMinutes(now()) < 60) {
+            session()->flash('error', 'SSL validation failed recently for this domain. Please wait at least 1 hour between attempts.');
+
+            return;
+        }
+
+        $email = $domain->account->user->email ?? 'admin@'.config('app.domain', 'hpanel.local');
+
+        $domain->update([
+            'ssl_requested_at' => now(),
+            'ssl_status' => 'pending',
+        ]);
+
+        IssueSslCertificateJob::dispatch($domain, $email);
+
+        session()->flash('status', "SSL certificate request initiated for {$domain->domain}.");
     }
 
     public function render(): View

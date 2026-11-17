@@ -26,15 +26,17 @@ class HandleIdempotencyKey
             return $next($request);
         }
 
+        $endpoint = '/' . ltrim($request->path(), '/');
         $requestHash = hash('sha256', $request->getContent());
 
         /** @var IdempotencyKey|null $existing */
         $existing = IdempotencyKey::where('user_id', $user->id)
+            ->where('endpoint', $endpoint)
             ->where('key', $idempotencyKey)
             ->first();
 
         if ($existing) {
-            // Verify payload matches
+            // Verify payload matches: same key with different body returns 409
             if ($existing->request_hash !== $requestHash) {
                 return response()->json([
                     'error' => [
@@ -64,7 +66,7 @@ class HandleIdempotencyKey
             IdempotencyKey::create([
                 'user_id' => $user->id,
                 'key' => $idempotencyKey,
-                'endpoint' => $request->path(),
+                'endpoint' => $endpoint,
                 'request_hash' => $requestHash,
                 'response_status' => $response->getStatusCode(),
                 'response_headers' => ['Content-Type' => 'application/json'],

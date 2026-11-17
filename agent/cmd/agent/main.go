@@ -67,6 +67,10 @@ func main() {
 		if err := actions.EnsureDefaultVhost("/etc/nginx/sites-available", "/etc/nginx/sites-enabled"); err != nil {
 			log.Printf("Warning: Failed to ensure 00-default-deny.conf: %v", err)
 		}
+		// Ensure shared ACME challenge and HTTP probe directories exist with 0755
+		if err := actions.EnsureAcmeDirectories(); err != nil {
+			log.Printf("Warning: Failed to ensure acme directories: %v", err)
+		}
 		// Ensure global sshd configuration (00-hpanel.conf) and comment out PasswordAuthentication no in main config
 		if err := actions.EnsureGlobalSshdConfig(context.Background(), "/etc/ssh/sshd_config", "/etc/ssh/sshd_config.d", nil); err != nil {
 			log.Printf("Warning: Failed to ensure global sshd config: %v", err)
@@ -102,6 +106,7 @@ func main() {
 	registry.Register(actions.NewVhostWriteAction())
 	registry.Register(actions.NewVhostRemoveAction())
 	registry.Register(actions.NewVhostReloadAction())
+	registry.Register(actions.NewVhostRegenerateAllAction())
 
 	// Nginx config manager actions
 	registry.Register(actions.NewNginxConfigListAction())
@@ -124,11 +129,13 @@ func main() {
 	registry.Register(actions.NewNginxServerRestoreAction())
 	registry.Register(actions.NewHtaccessSyncAction())
 
+	registry.Register(actions.NewDomainHttpProbeAction())
 	registry.Register(actions.NewSslIssueAction())
 	registry.Register(actions.NewSslRenewAction())
 	registry.Register(actions.NewSslRevokeAction())
 	registry.Register(actions.NewSslStatusAction())
 	registry.Register(actions.NewSslCustomAction())
+	registry.Register(actions.NewSslFixRenewalAction())
 
 	registry.Register(actions.NewPhpPoolWriteAction())
 	registry.Register(actions.NewPhpPoolRemoveAction())

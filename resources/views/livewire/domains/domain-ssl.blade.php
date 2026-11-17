@@ -62,10 +62,20 @@
                         </svg>
                         <span>Certificate issuance or installation is currently in progress...</span>
                     </div>
-                @elseif ($certificate && $certificate->status->value === 'failed')
-                    <div class="rounded-[20px] bg-rose-50 dark:bg-rose-500/10 border border-rose-300 dark:border-rose-500/20 p-4 text-xs text-rose-800 dark:text-rose-200">
-                        <p class="font-bold mb-1">Issuance Failed</p>
-                        <p class="font-mono text-[11px] text-rose-600 dark:text-rose-400 break-words">{{ $certificate->last_error }}</p>
+                @elseif (($certificate && $certificate->status->value === 'failed') || $domain->ssl_last_error)
+                    @php
+                        $errText = $domain->ssl_last_error ?: ($certificate->last_error ?? 'Issuance failed.');
+                    @endphp
+                    <div class="rounded-[20px] bg-rose-50 dark:bg-rose-500/10 border border-rose-300 dark:border-rose-500/20 p-4 text-xs text-rose-800 dark:text-rose-200" x-data="{ copiedErr: false }">
+                        <div class="flex items-center justify-between mb-1">
+                            <p class="font-bold">Issuance Failed</p>
+                            <button type="button" x-on:click="navigator.clipboard.writeText('{{ addslashes($errText) }}'); copiedErr = true; setTimeout(() => copiedErr = false, 2000)"
+                                class="px-2 py-0.5 text-[11px] rounded border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 transition cursor-pointer">
+                                <span x-show="!copiedErr">Copy Error</span>
+                                <span x-show="copiedErr" class="font-semibold">Copied!</span>
+                            </button>
+                        </div>
+                        <p class="font-mono text-[11px] text-rose-600 dark:text-rose-400 whitespace-pre-wrap break-all leading-relaxed">{{ $errText }}</p>
                     </div>
                 @else
                     <div class="text-center py-6 text-xs">

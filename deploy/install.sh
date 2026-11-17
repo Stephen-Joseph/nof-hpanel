@@ -571,6 +571,9 @@ step_end ok
 step_begin
 # 8. Caches, permissions & frontend assets
 run mkdir -p "$APP_DIR/storage/app/livewire-tmp" "$APP_DIR/storage/app/private/uploads"
+run mkdir -p "/var/www/_acme/.well-known/acme-challenge" "/var/www/_acme/.well-known/hpanel-verify"
+run chown -R root:root "/var/www/_acme" || true
+run chmod -R 755 "/var/www/_acme" || true
 artisan storage:link || true
 artisan optimize:clear
 artisan config:cache

@@ -77,8 +77,19 @@ class DomainSsl extends Component
             return;
         }
 
+        if ($this->domain->ssl_status === 'failed' && $this->domain->ssl_requested_at && $this->domain->ssl_requested_at->diffInMinutes(now()) < 60) {
+            session()->flash('error', 'SSL validation failed recently for this domain. Please wait at least 1 hour between attempts.');
+
+            return;
+        }
+
         $this->validate([
             'email' => ['required', 'email'],
+        ]);
+
+        $this->domain->update([
+            'ssl_requested_at' => now(),
+            'ssl_status' => 'pending',
         ]);
 
         IssueSslCertificateJob::dispatch($this->domain, $this->email);

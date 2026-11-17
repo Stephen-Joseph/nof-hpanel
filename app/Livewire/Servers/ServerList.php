@@ -242,10 +242,36 @@ class ServerList extends Component
 
         $serverGroups = ServerGroup::orderBy('name')->get();
 
+        $edgeHost = (string) config('hpanel.edge_host', 'edge.nexorafox.in');
+        $edgeWarning = null;
+        try {
+            /** @var \App\Services\Dns\DnsResolverInterface $resolver */
+            $resolver = app(\App\Services\Dns\DnsResolverInterface::class);
+            $aRecs = $resolver->getRecords($edgeHost, DNS_A);
+            $edgeIps = [];
+            foreach ($aRecs as $r) {
+                if (! empty($r['ip'])) {
+                    $edgeIps[] = (string) $r['ip'];
+                }
+            }
+            $serverIps = $servers->pluck('public_ip')->filter()->all();
+            $matches = array_intersect($edgeIps, $serverIps);
+            if (empty($matches) && ! empty($serverIps)) {
+                $edgeWarning = sprintf(
+                    "Edge host '%s' resolves to (%s), which does not match any active server node's public IP (%s). CNAME-pointed domains will fail routing.",
+                    $edgeHost,
+                    empty($edgeIps) ? 'unresolved' : implode(', ', $edgeIps),
+                    implode(', ', $serverIps)
+                );
+            }
+        } catch (\Throwable) {
+        }
+
         return view('livewire.servers.server-list', [
             'servers' => $servers,
             'serverGroups' => $serverGroups,
             'enrollmentState' => $this->enrollmentState,
+            'edgeWarning' => $edgeWarning,
         ]);
     }
 }

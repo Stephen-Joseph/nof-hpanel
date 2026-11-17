@@ -108,6 +108,7 @@ class AccountController extends Controller
         $domainPayload = [
             'id' => $primaryDomain->id,
             'name' => $primaryDomain->domain,
+            'type' => $primaryDomain->type->value,
             'verification_status' => $primaryDomain->verification_status,
         ];
 
@@ -158,6 +159,7 @@ class AccountController extends Controller
             'domain' => $primaryDomain ? [
                 'id' => $primaryDomain->id,
                 'name' => $primaryDomain->domain,
+                'type' => $primaryDomain->type->value,
                 'verification_status' => $primaryDomain->verification_status,
             ] : null,
             'status' => $account->status->value,
