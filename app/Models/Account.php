@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\AccountStatus;
+use App\Enums\DomainType;
 use Database\Factories\AccountFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -67,6 +68,18 @@ class Account extends Model
 {
     /** @use HasFactory<AccountFactory> */
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::updated(function (Account $account) {
+            if ($account->wasChanged('server_id')) {
+                $account->domains()->update([
+                    'verification_status' => 'pending_dns',
+                    'dns_last_error' => 'Server node changed; re-verification required.',
+                ]);
+            }
+        });
+    }
 
     /**
      * Regular expression allow-list for Linux usernames:
@@ -148,7 +161,7 @@ class Account extends Model
      */
     public function primaryDomain(): HasOne
     {
-        return $this->hasOne(Domain::class)->where('type', \App\Enums\DomainType::PRIMARY);
+        return $this->hasOne(Domain::class)->where('type', DomainType::PRIMARY);
     }
 
     /**

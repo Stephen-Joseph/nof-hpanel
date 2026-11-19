@@ -12,8 +12,9 @@ import (
 var tokenRegex = regexp.MustCompile(`^[a-zA-Z0-9_\-]{16,64}$`)
 
 type DomainHttpProbePayload struct {
-	Domain string `json:"domain"`
-	Token  string `json:"token"`
+	Domain  string `json:"domain"`
+	Token   string `json:"token"`
+	Cleanup bool   `json:"cleanup,omitempty"`
 }
 
 type DomainHttpProbeAction struct {
@@ -64,6 +65,33 @@ func (a *DomainHttpProbeAction) Execute(ctx context.Context, payload []byte, dry
 
 	logs := []string{
 		fmt.Sprintf("preparing domain http verification probe for %s", p.Domain),
+	}
+
+	if p.Cleanup {
+		if dryRun {
+			logs = append(logs, fmt.Sprintf("[dry-run] would remove probe file %s", targetFile))
+			return &ActionResult{
+				Success: true,
+				Data: map[string]any{
+					"domain":  p.Domain,
+					"token":   p.Token,
+					"cleaned": true,
+					"dry_run": true,
+				},
+				Logs: logs,
+			}, nil
+		}
+		_ = os.Remove(targetFile)
+		logs = append(logs, fmt.Sprintf("removed verification probe file %s", targetFile))
+		return &ActionResult{
+			Success: true,
+			Data: map[string]any{
+				"domain":  p.Domain,
+				"token":   p.Token,
+				"cleaned": true,
+			},
+			Logs: logs,
+		}, nil
 	}
 
 	if dryRun {

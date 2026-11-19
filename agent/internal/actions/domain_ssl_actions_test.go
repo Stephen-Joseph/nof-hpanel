@@ -428,3 +428,55 @@ server {
 		t.Errorf("expected backup file %s to be cleaned up", bakPath)
 	}
 }
+
+// 7. Test domain.http_probe writes verification file and cleans up
+func TestDomainHttpProbeAndCleanup(t *testing.T) {
+	tempDir := t.TempDir()
+	action := NewDomainHttpProbeActionWithDir(tempDir)
+
+	token := "abcdef1234567890abcdef1234567890"
+	domain := "site.example.com"
+
+	// 1. Write probe
+	payloadWrite, _ := json.Marshal(DomainHttpProbePayload{
+		Domain:  domain,
+		Token:   token,
+		Cleanup: false,
+	})
+
+	res, err := action.Execute(context.Background(), payloadWrite, false)
+	if err != nil {
+		t.Fatalf("domain.http_probe write failed: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected success on write")
+	}
+
+	targetFile := filepath.Join(tempDir, ".well-known", "hpanel-verify", token)
+	content, err := os.ReadFile(targetFile)
+	if err != nil {
+		t.Fatalf("expected probe file to exist: %v", err)
+	}
+	if string(content) != token {
+		t.Errorf("expected content %s, got %s", token, string(content))
+	}
+
+	// 2. Cleanup probe
+	payloadCleanup, _ := json.Marshal(DomainHttpProbePayload{
+		Domain:  domain,
+		Token:   token,
+		Cleanup: true,
+	})
+
+	resClean, err := action.Execute(context.Background(), payloadCleanup, false)
+	if err != nil {
+		t.Fatalf("domain.http_probe cleanup failed: %v", err)
+	}
+	if !resClean.Success {
+		t.Fatalf("expected success on cleanup")
+	}
+
+	if _, err := os.Stat(targetFile); !os.IsNotExist(err) {
+		t.Errorf("expected probe file to be removed after cleanup")
+	}
+}

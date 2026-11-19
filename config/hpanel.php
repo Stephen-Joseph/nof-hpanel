@@ -44,6 +44,7 @@ return [
     |--------------------------------------------------------------------------
     */
     'panel_domain' => env('PANEL_DOMAIN', 'panel.nexorafox.in'),
+    'edge_base' => env('HPANEL_EDGE_BASE', 'nexorafox.in'),
     'edge_host' => env('HPANEL_EDGE_HOST', 'edge.nexorafox.in'),
     'edge_fallback_ip' => env('HPANEL_EDGE_FALLBACK_IP', null),
     'verification_txt_prefix' => env('HPANEL_VERIFY_TXT_PREFIX', '_hpanel-verify'),
@@ -117,4 +118,3 @@ return [
         'repo_url' => env('HPANEL_REPO_URL', 'https://github.com/Stephen-Joseph/nof-hpanel.git'),
     ],
 ];
-

@@ -17,13 +17,19 @@ use App\Models\Package;
 use App\Models\Server;
 use App\Models\User;
 use App\Services\AgentClient;
+use App\Services\Dns\DnsResolverInterface;
 use App\Services\WebhookService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
+use Tests\Fakes\FakeDnsResolver;
 
 beforeEach(function () {
     $this->server = Server::factory()->create(['status' => ServerStatus::ACTIVE, 'private_ip' => '10.0.0.12']);
+    $this->fakeResolver = new FakeDnsResolver;
+    $this->fakeResolver->setA('alicecorp.com', $this->server->public_ip);
+    $this->app->instance(DnsResolverInterface::class, $this->fakeResolver);
+
     $this->package = Package::factory()->create();
 
     $this->customer1 = User::factory()->customer()->create(['email' => 'alice@alicecorp.com']);

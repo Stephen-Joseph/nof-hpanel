@@ -88,7 +88,10 @@ class DnsHelper extends Component
     public function render(DnsResolverInterface $resolver, DomainZoneResolver $zoneResolver): View
     {
         $this->domain->refresh();
-        $edgeHost = (string) config('hpanel.edge_host', 'edge.nexorafox.in');
+        $this->domain->loadMissing('account.server');
+        $node = $this->domain->account?->server;
+
+        $edgeHost = (string) ($node?->edge_host ?: config('hpanel.edge_host', 'edge.nexorafox.in'));
 
         $edgeIps = [];
         try {
@@ -103,20 +106,21 @@ class DnsHelper extends Component
         }
 
         if (empty($edgeIps)) {
-            $fallbackIp = config('hpanel.edge_fallback_ip') ?: $this->domain->account?->server?->public_ip;
+            $fallbackIp = config('hpanel.edge_fallback_ip') ?: $node?->public_ip;
             if (! empty($fallbackIp)) {
                 $edgeIps[] = (string) $fallbackIp;
             }
         }
 
         $nodeIps = [];
-        if (! empty($this->domain->account?->server?->public_ip)) {
-            $nodeIps[] = (string) $this->domain->account->server->public_ip;
+        if (! empty($node?->public_ip)) {
+            $nodeIps[] = (string) $node->public_ip;
         }
 
         $zoneInfo = $zoneResolver->resolve($this->domain->domain);
 
         return view('livewire.domains.dns-helper', [
+            'node' => $node,
             'edgeHost' => $edgeHost,
             'edgeIps' => array_values(array_unique($edgeIps)),
             'nodeIps' => array_values(array_unique($nodeIps)),

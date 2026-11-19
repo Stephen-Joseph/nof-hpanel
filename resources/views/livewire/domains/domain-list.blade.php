@@ -93,6 +93,12 @@
                         @elseif($domain->force_https)
                             <x-ui.chip variant="success" size="xs" dot>HTTPS</x-ui.chip>
                         @endif
+
+                        @if($domain->account?->server)
+                            <x-ui.chip variant="neutral" size="xs" title="Hosted on {{ $domain->account->server->name }} ({{ $domain->account->server->public_ip }})">
+                                {{ $domain->account->server->name }}
+                            </x-ui.chip>
+                        @endif
                     </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-[var(--text-muted)]">

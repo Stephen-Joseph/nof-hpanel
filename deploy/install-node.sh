@@ -229,6 +229,20 @@ if [ -z "$PRIVATE_IP" ]; then
     echo -e "${YELLOW}Private IP auto-detected: ${PRIVATE_IP}${NC}"
 fi
 
+# Detect Public IP if not provided
+if [ -z "$NODE_PUBLIC_IP" ]; then
+    if [ "$DRY_RUN" = true ]; then
+        NODE_PUBLIC_IP="198.51.100.10"
+        echo -e "${YELLOW}[DRY-RUN] Public IP simulated: ${NODE_PUBLIC_IP}${NC}"
+    else
+        DETECTED_IP=$(curl -fsSL --max-time 5 https://api.ipify.org 2>/dev/null | tr -d '[:space:]' || true)
+        if [ -n "$DETECTED_IP" ]; then
+            NODE_PUBLIC_IP="$DETECTED_IP"
+            echo -e "${GREEN}✓ Public IP auto-detected via api.ipify.org: ${NODE_PUBLIC_IP}${NC}"
+        fi
+    fi
+fi
+
 # Set default listen address to private IP:AGENT_PORT if not explicitly passed
 if [ -z "$AGENT_LISTEN" ]; then
     AGENT_LISTEN="${PRIVATE_IP}:${AGENT_PORT}"
@@ -696,6 +710,7 @@ fi
 printf "%-35s %-15s\n" "Agent Health Check" "$HEALTH_STATUS"
 echo "=============================================================="
 echo "Registered Cert Fingerprint: ${CERT_FINGERPRINT:-none}"
+echo "Registered Public IP:        ${NODE_PUBLIC_IP:-none}"
 echo "Agent Config File:           $CONFIG_FILE"
 echo "Systemd Unit:                hpanel-agent.service"
 echo "=============================================================="

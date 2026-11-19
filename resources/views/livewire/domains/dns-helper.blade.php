@@ -174,6 +174,32 @@
                                                 </td>
                                             </tr>
                                         @endforeach
+
+                                        @if (! empty($node?->public_ipv6))
+                                            <tr class="text-main" x-data="{ copiedHost: false, copiedFull: false, copiedIpv6: false }">
+                                                <td class="py-2.5 px-3 font-mono font-bold text-primary-500">AAAA</td>
+                                                <td class="py-2.5 px-3 font-mono font-semibold">{{ $cnameRelativeHost }}</td>
+                                                <td class="py-2.5 px-3 font-mono text-muted">{{ $cnameFullName }}</td>
+                                                <td class="py-2.5 px-3 font-mono font-semibold">{{ $node->public_ipv6 }}</td>
+                                                <td class="py-2.5 px-3 text-right space-x-1 whitespace-nowrap">
+                                                    <button type="button" x-on:click="navigator.clipboard.writeText('{{ $cnameRelativeHost }}'); copiedHost = true; setTimeout(() => copiedHost = false, 2000)"
+                                                        class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer">
+                                                        <span x-show="!copiedHost">Copy Host</span>
+                                                        <span x-show="copiedHost" class="text-emerald-500 font-semibold">Copied!</span>
+                                                    </button>
+                                                    <button type="button" x-on:click="navigator.clipboard.writeText('{{ $cnameFullName }}'); copiedFull = true; setTimeout(() => copiedFull = false, 2000)"
+                                                        class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer">
+                                                        <span x-show="!copiedFull">Copy Full</span>
+                                                        <span x-show="copiedFull" class="text-emerald-500 font-semibold">Copied!</span>
+                                                    </button>
+                                                    <button type="button" x-on:click="navigator.clipboard.writeText('{{ $node->public_ipv6 }}'); copiedIpv6 = true; setTimeout(() => copiedIpv6 = false, 2000)"
+                                                        class="px-2 py-1 text-xs rounded-lg border border-border bg-card hover:bg-shell text-muted hover:text-main transition cursor-pointer">
+                                                        <span x-show="!copiedIpv6">Copy IPv6</span>
+                                                        <span x-show="copiedIpv6" class="text-emerald-500 font-semibold">Copied!</span>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        @endif
                                     </tbody>
                                 </table>
                             </div>

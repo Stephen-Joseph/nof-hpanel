@@ -26,6 +26,19 @@
         </div>
     @endif
 
+    @foreach ($servers as $srv)
+        @if ($srv->accounts_count > 0 && $srv->edge_dns_checked_at && ! $srv->edge_dns_ok)
+            <div class="mb-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300 flex items-start gap-3">
+                <svg class="w-5 h-5 shrink-0 text-amber-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div>
+                    <span class="font-bold">Edge DNS Warning for {{ $srv->name }}:</span> Node hosts {{ $srv->accounts_count }} account(s), but its edge host (<code>{{ $srv->edge_host }}</code>) does not resolve to its public IP (<code>{{ $srv->public_ip }}</code>). Domains assigned to this node will fail DNS routing.
+                </div>
+            </div>
+        @endif
+    @endforeach
+
     <x-ui.card class="p-0 overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse text-xs">
@@ -43,8 +56,22 @@
                     @forelse ($servers as $srv)
                         <tr class="hover:bg-shell/40 transition">
                             <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="font-semibold text-main">{{ $srv->name }}</span>
+                                <div class="flex items-center gap-2">
+                                    <span class="font-semibold text-main">{{ $srv->name }}</span>
+                                    @if ($srv->edge_dns_checked_at)
+                                        @if ($srv->edge_dns_ok)
+                                            <x-ui.chip variant="success" size="xs" dot>Edge DNS OK</x-ui.chip>
+                                        @else
+                                            <x-ui.chip variant="danger" size="xs" dot>Edge DNS Mismatch</x-ui.chip>
+                                        @endif
+                                    @else
+                                        <x-ui.chip variant="neutral" size="xs">DNS Unchecked</x-ui.chip>
+                                    @endif
+                                </div>
                                 <span class="block text-xs font-mono text-muted">{{ $srv->hostname }}</span>
+                                @if ($srv->edge_host)
+                                    <span class="block text-[11px] font-mono text-primary-500">{{ $srv->edge_host }} &middot; {{ $srv->public_ip }}</span>
+                                @endif
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-xs font-mono">
                                 <span class="text-main font-medium">{{ $srv->private_ip }}</span>
@@ -70,6 +97,11 @@
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-right text-xs">
                                 <div class="flex items-center justify-end gap-3">
+                                    <button type="button" wire:click="checkNodeEdgeDns({{ $srv->id }})"
+                                        class="text-xs font-medium cursor-pointer text-primary-500 hover:text-primary-600">
+                                        Check DNS
+                                    </button>
+
                                     <button type="button" wire:click="toggleDrain({{ $srv->id }})"
                                         class="text-xs font-medium cursor-pointer {{ $srv->status === App\Enums\ServerStatus::ACTIVE ? 'text-amber-500 hover:text-amber-600' : 'text-emerald-500 hover:text-emerald-600' }}">
                                         {{ $srv->status === App\Enums\ServerStatus::ACTIVE ? 'Drain' : 'Undrain' }}

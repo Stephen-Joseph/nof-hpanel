@@ -9,6 +9,7 @@ use App\Models\ServerGroup;
 use App\Models\User;
 use App\Services\AgentClient;
 use App\Services\AuditService;
+use App\Services\Dns\DnsResolverInterface;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -231,6 +232,22 @@ class ServerList extends Component
         }
     }
 
+    public function checkNodeEdgeDns(int $serverId, DnsResolverInterface $resolver): void
+    {
+        /** @var Server $server */
+        $server = Server::findOrFail($serverId);
+        $this->authorize('view', $server);
+
+        $isOk = $server->checkEdgeDns($resolver);
+        $server->refresh();
+
+        if ($isOk) {
+            session()->flash('status', "Edge DNS for {$server->name} ({$server->edge_host}) is properly pointing to {$server->public_ip}.");
+        } else {
+            session()->flash('error', "Edge DNS mismatch for {$server->name} ({$server->edge_host})! Does not resolve to public IP {$server->public_ip}.");
+        }
+    }
+
     public function render(): View
     {
         $this->authorize('viewAny', Server::class);
@@ -245,8 +262,8 @@ class ServerList extends Component
         $edgeHost = (string) config('hpanel.edge_host', 'edge.nexorafox.in');
         $edgeWarning = null;
         try {
-            /** @var \App\Services\Dns\DnsResolverInterface $resolver */
-            $resolver = app(\App\Services\Dns\DnsResolverInterface::class);
+            /** @var DnsResolverInterface $resolver */
+            $resolver = app(DnsResolverInterface::class);
             $aRecs = $resolver->getRecords($edgeHost, DNS_A);
             $edgeIps = [];
             foreach ($aRecs as $r) {

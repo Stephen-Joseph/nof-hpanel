@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\AccountStatus;
 use App\Enums\UserRole;
+use App\Exceptions\NoAvailableServerException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\ChangePasswordRequest;
 use App\Http\Requests\Api\CreateAccountRequest;
@@ -19,6 +20,7 @@ use App\Models\Package;
 use App\Models\Server;
 use App\Models\User;
 use App\Services\PrimaryDomainService;
+use App\Services\ServerScheduler;
 use App\Services\WebhookService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,7 +31,7 @@ use Illuminate\Support\Str;
 
 class AccountController extends Controller
 {
-    public function store(CreateAccountRequest $request, WebhookService $webhooks, PrimaryDomainService $primaryDomains): JsonResponse
+    public function store(CreateAccountRequest $request, WebhookService $webhooks, PrimaryDomainService $primaryDomains, ServerScheduler $scheduler): JsonResponse
     {
         /** @var User $actor */
         $actor = $request->user();
@@ -60,15 +62,17 @@ class AccountController extends Controller
         // 2. Select package and check tenancy
         $package = Package::availableFor($actor)->findOrFail($validated['package_id']);
 
-        // 3. Select server
+        // 3. Select server (by capacity if server_id omitted)
         $serverId = $validated['server_id'] ?? null;
         if (! $serverId) {
-            $serverId = Server::where('status', 'active')->orderBy('id')->value('id');
-            if (! $serverId) {
+            try {
+                $chosenServer = $scheduler->selectServer();
+                $serverId = $chosenServer->id;
+            } catch (NoAvailableServerException) {
                 return response()->json([
                     'error' => [
                         'code' => 'NO_ACTIVE_SERVER',
-                        'message' => 'No active server node is available to provision this account.',
+                        'message' => 'No active server node with available capacity is available to provision this account.',
                     ],
                 ], 503);
             }
@@ -104,11 +108,24 @@ class AccountController extends Controller
 
         // 5. Enqueue asynchronous provisioning
         ProvisionAccount::dispatch($account);
+        $account->loadMissing('server');
 
         $domainPayload = [
             'id' => $primaryDomain->id,
             'name' => $primaryDomain->domain,
             'type' => $primaryDomain->type->value,
+            'verification_status' => $primaryDomain->verification_status,
+        ];
+
+        $dnsPayload = [
+            'node_name' => $account->server->name,
+            'edge_host' => $account->server->edge_host,
+            'a_records' => array_values(array_filter([
+                $account->server->public_ip,
+                $account->server->public_ipv6,
+            ])),
+            'txt_name' => $primaryDomain->getVerificationTxtHost(),
+            'txt_value' => $primaryDomain->getVerificationTxtValue(),
             'verification_status' => $primaryDomain->verification_status,
         ];
 
@@ -118,6 +135,7 @@ class AccountController extends Controller
             'username' => $account->linux_username,
             'domain' => $account->primary_domain,
             'primary_domain' => $domainPayload,
+            'dns' => $dnsPayload,
             'status' => $account->status->value,
             'package_id' => $package->id,
             'server_id' => $account->server_id,
@@ -129,6 +147,7 @@ class AccountController extends Controller
             'username' => $account->linux_username,
             'domain' => $account->primary_domain,
             'primary_domain' => $domainPayload,
+            'dns' => $dnsPayload,
             'message' => 'Account has been enqueued for asynchronous provisioning.',
         ], 202);
     }
@@ -152,6 +171,18 @@ class AccountController extends Controller
 
         $primaryDomain = $account->primaryDomain;
 
+        $dnsPayload = $primaryDomain ? [
+            'node_name' => $account->server->name,
+            'edge_host' => $account->server->edge_host,
+            'a_records' => array_values(array_filter([
+                $account->server->public_ip,
+                $account->server->public_ipv6,
+            ])),
+            'txt_name' => $primaryDomain->getVerificationTxtHost(),
+            'txt_value' => $primaryDomain->getVerificationTxtValue(),
+            'verification_status' => $primaryDomain->verification_status,
+        ] : null;
+
         return response()->json([
             'id' => $account->id,
             'username' => $account->linux_username,
@@ -162,6 +193,7 @@ class AccountController extends Controller
                 'type' => $primaryDomain->type->value,
                 'verification_status' => $primaryDomain->verification_status,
             ] : null,
+            'dns' => $dnsPayload,
             'status' => $account->status->value,
             'suspended_reason' => $account->suspended_reason,
             'owner' => [

@@ -28,6 +28,7 @@ test('admin can view servers list and register a new server', function () {
         ->set('name', 'US East Node 2')
         ->set('hostname', 'node2.us-east.hpanel.internal')
         ->set('private_ip', '10.200.1.20')
+        ->set('public_ip', '198.51.100.20')
         ->set('agent_url', 'https://10.200.1.20:8443')
         ->set('status', ServerStatus::ACTIVE->value)
         ->set('max_accounts', 200)

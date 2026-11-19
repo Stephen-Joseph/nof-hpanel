@@ -9,6 +9,7 @@ use App\Models\AgentJob;
 use App\Models\Certificate;
 use App\Models\Domain;
 use App\Services\AgentClient;
+use App\Services\Dns\DnsResolverInterface;
 use App\Services\WebhookService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -31,8 +32,9 @@ class IssueSslCertificateJob implements ShouldQueue
         public bool $dryRun = false
     ) {}
 
-    public function handle(AgentClient $client, WebhookService $webhooks): void
+    public function handle(AgentClient $client, WebhookService $webhooks, ?DnsResolverInterface $resolver = null): void
     {
+        $resolver = $resolver ?? app(DnsResolverInterface::class);
         $this->domain->loadMissing('account.server');
         $account = $this->domain->account;
         $server = $account->server;
@@ -46,6 +48,42 @@ class IssueSslCertificateJob implements ShouldQueue
             ]);
 
             return;
+        }
+
+        // SSL preflight: ensure public DNS matches account node public_ip
+        if (! empty($server?->public_ip)) {
+            $dnsARecords = $resolver->getRecords($this->domain->domain, DNS_A);
+            $dnsIps = [];
+            foreach ($dnsARecords as $r) {
+                if (! empty($r['ip'])) {
+                    $dnsIps[] = strtolower(trim((string) $r['ip']));
+                }
+            }
+
+            if (! empty($dnsIps) && ! in_array(strtolower(trim($server->public_ip)), $dnsIps, true)) {
+                $err = sprintf(
+                    'DNS_NOT_POINTING: domain %s public DNS (%s) does not match node %s IP (%s).',
+                    $this->domain->domain,
+                    implode(', ', $dnsIps),
+                    $server->name,
+                    $server->public_ip
+                );
+                $this->domain->update([
+                    'ssl_status' => 'failed',
+                    'ssl_last_error' => $err,
+                ]);
+
+                Certificate::updateOrCreate(
+                    ['domain_id' => $this->domain->id],
+                    [
+                        'type' => CertificateType::LETS_ENCRYPT,
+                        'status' => CertificateStatus::FAILED,
+                        'last_error' => $err,
+                    ]
+                );
+
+                return;
+            }
         }
 
         $this->domain->update([
@@ -70,6 +108,7 @@ class IssueSslCertificateJob implements ShouldQueue
             'email' => $this->email,
             'alt_names' => $this->altNames,
             'agree_tos' => true,
+            'node_public_ip' => $server?->public_ip,
         ];
 
         $agentJob = AgentJob::create([

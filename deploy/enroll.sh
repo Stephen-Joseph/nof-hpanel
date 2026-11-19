@@ -144,6 +144,16 @@ elif [ -z "${PRIVATE_IP:-}" ]; then
 fi
 
 PUBLIC_IP="${PUBLIC_IP_ARG:-${PUBLIC_IP:-}}"
+if [ -z "$PUBLIC_IP" ]; then
+    if [ "$DRY_RUN" = true ]; then
+        PUBLIC_IP="198.51.100.10"
+    else
+        DETECTED_IP=$(curl -fsSL --max-time 5 https://api.ipify.org 2>/dev/null | tr -d '[:space:]' || true)
+        if [ -n "$DETECTED_IP" ]; then
+            PUBLIC_IP="$DETECTED_IP"
+        fi
+    fi
+fi
 
 AGENT_URL="${AGENT_URL_ARG:-${AGENT_URL:-https://${PRIVATE_IP}:8443}}"
 LOCATION="${LOCATION_ARG:-${LOCATION:-}}"

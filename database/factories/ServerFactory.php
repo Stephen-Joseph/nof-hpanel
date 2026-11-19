@@ -19,11 +19,16 @@ class ServerFactory extends Factory
     public function definition(): array
     {
         $id = fake()->unique()->numberBetween(1, 999);
+        $publicIp = '198.51.100.'.fake()->numberBetween(1, 254);
 
         return [
             'name' => 'Node '.$id.' ('.fake()->city().')',
             'hostname' => 'node'.$id.'.hpanel.internal',
             'private_ip' => '10.200.'.fake()->numberBetween(1, 254).'.'.fake()->numberBetween(1, 254),
+            'public_ip' => $publicIp,
+            'public_ipv6' => null,
+            'edge_host' => null,
+            'edge_dns_ok' => false,
             'agent_url' => 'https://10.200.0.'.$id.':8443',
             'status' => ServerStatus::ACTIVE,
             'agent_public_cert_fingerprint' => hash('sha256', fake()->uuid()),

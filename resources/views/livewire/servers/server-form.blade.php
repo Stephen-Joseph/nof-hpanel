@@ -37,6 +37,47 @@
                 </div>
             </div>
 
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-medium text-muted mb-1.5">Public IPv4 Address</label>
+                    <x-ui.input type="text" wire:model="public_ip" required placeholder="e.g. 198.51.100.1" class="font-mono" />
+                    <span class="text-[11px] text-muted mt-1 block">Traffic-facing public IPv4 for DNS A records.</span>
+                    @error('public_ip') <span class="text-xs text-rose-500 block mt-1">{{ $message }}</span> @enderror
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-muted mb-1.5">Public IPv6 Address (Optional)</label>
+                    <x-ui.input type="text" wire:model="public_ipv6" placeholder="e.g. 2001:db8::1" class="font-mono" />
+                    <span class="text-[11px] text-muted mt-1 block">Optional IPv6 for DNS AAAA records.</span>
+                    @error('public_ipv6') <span class="text-xs text-rose-500 block mt-1">{{ $message }}</span> @enderror
+                </div>
+            </div>
+
+            <div>
+                <div class="flex items-center justify-between mb-1.5">
+                    <label class="block text-xs font-medium text-muted">Node Edge Hostname</label>
+                    <div class="flex items-center gap-2">
+                        @if ($edgeDnsOk === true)
+                            <x-ui.chip variant="success" size="xs" dot>Edge DNS OK</x-ui.chip>
+                        @elseif ($edgeDnsOk === false)
+                            <x-ui.chip variant="danger" size="xs" dot>Edge DNS Mismatch</x-ui.chip>
+                        @endif
+                        <button type="button" wire:click="checkEdgeDns" wire:loading.attr="disabled" class="text-xs text-primary-500 hover:text-primary-600 font-medium cursor-pointer">
+                            <span wire:loading.remove wire:target="checkEdgeDns">Check edge DNS</span>
+                            <span wire:loading wire:target="checkEdgeDns">Checking...</span>
+                        </button>
+                    </div>
+                </div>
+                <x-ui.input type="text" wire:model="edge_host" placeholder="e.g. edge-node-1.nexorafox.in" class="font-mono" />
+                <span class="text-[11px] text-muted mt-1 block">Per-node edge hostname for customer CNAME pointing. Defaults to edge-&lt;slug&gt;.{{ config('hpanel.edge_base', 'nexorafox.in') }}.</span>
+                @if ($edgeDnsMessage)
+                    <div class="mt-2 text-xs {{ $edgeDnsOk ? 'text-emerald-500' : 'text-rose-500' }}">
+                        {{ $edgeDnsMessage }}
+                    </div>
+                @endif
+                @error('edge_host') <span class="text-xs text-rose-500 block mt-1">{{ $message }}</span> @enderror
+            </div>
+
             <div>
                 <label class="block text-xs font-medium text-muted mb-1.5">Agent URL</label>
                 <x-ui.input type="url" wire:model="agent_url" required placeholder="https://10.0.0.1:8443" class="font-mono" />

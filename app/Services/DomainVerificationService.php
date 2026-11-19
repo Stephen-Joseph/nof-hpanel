@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Domain;
+use App\Models\Server;
 use App\Services\Dns\DnsResolverInterface;
 use Illuminate\Support\Facades\Http;
 
@@ -18,15 +19,14 @@ class DomainVerificationService
     /**
      * Check DNS records and update domain status.
      *
-     * @param Domain $domain
-     * @param bool $forceAdminAction When true, explicit admin action will downgrade immediately on failure.
-     * @return DomainVerificationResult
+     * @param  bool  $forceAdminAction  When true, explicit admin action will downgrade immediately on failure.
      */
     public function verify(Domain $domain, bool $forceAdminAction = false): DomainVerificationResult
     {
         $domain->loadMissing(['account.server', 'account.user']);
 
-        $edgeHost = strtolower(rtrim((string) config('hpanel.edge_host', 'edge.nexorafox.in'), '.'));
+        $node = $domain->account?->server;
+        $edgeHost = strtolower(rtrim((string) ($node?->edge_host ?: config('hpanel.edge_host', 'edge.nexorafox.in')), '.'));
         $txtPrefix = (string) config('hpanel.verification_txt_prefix', '_hpanel-verify');
 
         // 1. Ownership check via TXT record: _hpanel-verify.<domain> must contain "hpanel-verify=<token>"
@@ -119,11 +119,14 @@ class DomainVerificationService
         $domainIps = [];
         $validTargetIps = [];
 
-        if (! empty($domain->account?->server?->public_ip)) {
-            $validTargetIps[] = strtolower(trim((string) $domain->account->server->public_ip));
+        if (! empty($node?->public_ip)) {
+            $validTargetIps[] = strtolower(trim((string) $node->public_ip));
+        }
+        if (! empty($node?->public_ipv6)) {
+            $validTargetIps[] = strtolower(trim((string) $node->public_ipv6));
         }
 
-        // Live resolution of edge host (no hard-coded IPs)
+        // Live resolution of node edge host (no hard-coded IPs)
         $edgeARecords = $this->resolver->getRecords($edgeHost, DNS_A);
         $edgeAaaaRecords = $this->resolver->getRecords($edgeHost, DNS_AAAA);
         foreach ($edgeARecords as $r) {
@@ -158,6 +161,27 @@ class DomainVerificationService
             }
         }
 
+        // Cross-node detection: check if domain points to another registered node
+        $crossNodeConflict = null;
+        if (! $routingOk && $node) {
+            $otherServers = Server::where('id', '!=', $node->id)->get();
+            foreach ($otherServers as $otherServer) {
+                $otherEdge = strtolower(rtrim((string) $otherServer->edge_host, '.'));
+                $otherIps = array_values(array_filter([
+                    strtolower(trim((string) $otherServer->public_ip)),
+                    strtolower(trim((string) $otherServer->public_ipv6)),
+                ]));
+
+                $matchesCname = ! empty($otherEdge) && in_array($otherEdge, $cnameTargets, true);
+                $matchesIp = ! empty(array_intersect($domainIps, $otherIps));
+
+                if ($matchesCname || $matchesIp) {
+                    $crossNodeConflict = $otherServer;
+                    break;
+                }
+            }
+        }
+
         $isVerified = $ownershipOk && $routingOk;
 
         $checkDetails = [
@@ -174,6 +198,9 @@ class DomainVerificationService
         if ($isVerified) {
             $message = 'Domain ownership and routing verified successfully.';
             $error = null;
+        } elseif ($crossNodeConflict) {
+            $error = "Domain points to another node: {$crossNodeConflict->name} ({$crossNodeConflict->public_ip}) but belongs to {$node->name} ({$node->public_ip}).";
+            $message = "Cross-node routing conflict: domain points to another node: {$crossNodeConflict->name} ({$crossNodeConflict->public_ip}) but belongs to {$node->name} ({$node->public_ip}). Please update DNS records to point to {$edgeHost}.";
         } elseif (! $ownershipOk && ! $routingOk) {
             $message = "DNS records not detected yet. TXT record at {$txtHost} was not found, and routing is not pointing to {$edgeHost}. DNS changes can take up to 24 hours to propagate.";
             $error = "Missing TXT ownership record and routing record pointing to {$edgeHost}.";
@@ -232,13 +259,13 @@ class DomainVerificationService
 
     /**
      * Attempt HTTP proof by writing token to /var/www/_acme/.well-known/hpanel-verify/<token>
-     * and fetching http://<domain>/.well-known/hpanel-verify/<token> over the public internet.
+     * and fetching http://<domain>/.well-known/hpanel-verify/<token> over the public internet and via resolve.
      */
     protected function attemptHttpProof(Domain $domain): bool
     {
         try {
             $server = $domain->account?->server;
-            if (! $server) {
+            if (! $server || empty($server->public_ip)) {
                 return false;
             }
 
@@ -258,13 +285,30 @@ class DomainVerificationService
 
             $url = "http://{$domain->domain}/.well-known/hpanel-verify/{$domain->verification_token}";
 
-            // Fetch public URL with 5 second timeout
-            $response = Http::timeout(5)
+            // Check 1: fetch with --resolve <domain>:80:<node.public_ip>
+            $resolveOptions = [
+                'curl' => [
+                    CURLOPT_RESOLVE => ["{$domain->domain}:80:{$server->public_ip}"],
+                ],
+            ];
+
+            $resolveResponse = Http::timeout(5)
+                ->withoutRedirecting()
+                ->withHeaders(['User-Agent' => 'HPanel-Verifier/1.0'])
+                ->withOptions($resolveOptions)
+                ->get($url);
+
+            if (! $resolveResponse->successful() || trim($resolveResponse->body()) !== trim($domain->verification_token)) {
+                return false;
+            }
+
+            // Check 2: fetch through public DNS
+            $publicResponse = Http::timeout(5)
                 ->withoutRedirecting()
                 ->withHeaders(['User-Agent' => 'HPanel-Verifier/1.0'])
                 ->get($url);
 
-            if ($response->successful() && trim($response->body()) === trim($domain->verification_token)) {
+            if ($publicResponse->successful() && trim($publicResponse->body()) === trim($domain->verification_token)) {
                 return true;
             }
         } catch (\Throwable) {

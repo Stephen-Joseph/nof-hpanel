@@ -19,15 +19,16 @@ import (
 )
 
 type SslIssuePayload struct {
-	Domain      string   `json:"domain"`
-	Email       string   `json:"email"`
-	AltNames    []string `json:"alt_names,omitempty"`
-	AgreeTOS    bool     `json:"agree_tos,omitempty"`
-	Username    string   `json:"username,omitempty"`
-	AppProfile  string   `json:"app_profile,omitempty"`
-	PHPVersion  string   `json:"php_version,omitempty"`
-	ForceHTTPS  bool     `json:"force_https,omitempty"`
-	WwwRedirect string   `json:"www_redirect,omitempty"`
+	Domain       string   `json:"domain"`
+	Email        string   `json:"email"`
+	AltNames     []string `json:"alt_names,omitempty"`
+	AgreeTOS     bool     `json:"agree_tos,omitempty"`
+	Username     string   `json:"username,omitempty"`
+	AppProfile   string   `json:"app_profile,omitempty"`
+	PHPVersion   string   `json:"php_version,omitempty"`
+	ForceHTTPS   bool     `json:"force_https,omitempty"`
+	WwwRedirect  string   `json:"www_redirect,omitempty"`
+	NodePublicIP string   `json:"node_public_ip,omitempty"`
 }
 
 type HttpGetter interface {
@@ -306,6 +307,38 @@ func (a *SslIssueAction) Execute(ctx context.Context, payload []byte, dryRun boo
 			},
 			Logs: logs,
 		}, fmt.Errorf(errStr)
+	}
+
+	// Preflight c2: if NodePublicIP is specified, ensure resolvedIPs contains NodePublicIP
+	if p.NodePublicIP != "" {
+		resolvedIPs := []string{}
+		if ips, err := a.dnsLookup.LookupIP(p.Domain); err == nil {
+			for _, ip := range ips {
+				resolvedIPs = append(resolvedIPs, ip.String())
+			}
+		}
+		matched := false
+		for _, rip := range resolvedIPs {
+			if rip == p.NodePublicIP {
+				matched = true
+				break
+			}
+		}
+		if !matched && len(resolvedIPs) > 0 {
+			errStr := fmt.Sprintf("DNS_NOT_POINTING: domain %s resolves to %v which does not match node public IP %s", p.Domain, resolvedIPs, p.NodePublicIP)
+			logs = append(logs, errStr)
+			return &ActionResult{
+				Success: false,
+				Error:   errStr,
+				Data: map[string]any{
+					"error_code":     "DNS_NOT_POINTING",
+					"domain":         p.Domain,
+					"node_public_ip": p.NodePublicIP,
+					"resolved_ips":   resolvedIPs,
+				},
+				Logs: logs,
+			}, fmt.Errorf(errStr)
+		}
 	}
 
 	// 4. Preflight d: Request only names that pass c. Include www.<domain> only when it also resolves and passes probe.
